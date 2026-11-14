@@ -1,0 +1,5 @@
+@echo off
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0test.ps1" -Phase start
+set "RESULT=%errorlevel%"
+pause
+exit /b %RESULT%
