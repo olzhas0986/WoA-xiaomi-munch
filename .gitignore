@@ -1,0 +1,12 @@
+/Mu-Silicium/
+/.venv/
+/inputs/munch/xbl.img
+/inputs/munch/live.dtb
+/inputs/munch/extracted-xbl/
+/out/
+**/__pycache__/
+*.py[cod]
+firmware/munch/Acpi/*.aml
+ref/linux/build/
+ref/linux/cache/
+ref/linux/sources/

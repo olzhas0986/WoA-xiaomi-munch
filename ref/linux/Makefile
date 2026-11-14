@@ -36,7 +36,7 @@ export KBUILD_BUILD_USER := pmos-munch
 export KBUILD_BUILD_HOST := build
 export KBUILD_BUILD_VERSION := 1
 export KCONFIG_NOTIMESTAMP := 1
-ARCH_ROOTFS ?= $(HOME)/Загрузки/ArchLinuxARM-aarch64-latest.tar.gz
+ARCH_ROOTFS ?= $(CURDIR)/cache/ArchLinuxARM-aarch64-latest.tar.gz
 .PHONY: arch-ram
 arch-ram:
 	mkdir -p "$(OUT)/arch-ram"

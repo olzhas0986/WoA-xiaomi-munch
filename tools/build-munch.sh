@@ -2,6 +2,11 @@
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 mu="$root/Mu-Silicium"
+[[ -d "$mu/.git" ]] || { echo "Mu-Silicium is missing; run: make deps" >&2; exit 1; }
+[[ -f "$root/inputs/munch/xbl.img" && -f "$root/inputs/munch/live.dtb" ]] || {
+    echo "Device inputs are missing; run: make inputs XBL=/path/xbl.img DTB=/path/munch.dtb" >&2
+    exit 1
+}
 python3 "$root/tools/munch-acpi.py"
 python3 "$root/tools/prepare-munch.py"
 export WORKSPACE="$mu"

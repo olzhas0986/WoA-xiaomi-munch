@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MU = ROOT / 'Mu-Silicium'
-SOURCE = ROOT / 'reference/ios-munch/devices/poco-f4/uefi/files/Platforms/Xiaomi/munchPkg'
+SOURCE = ROOT / 'platform/munchPkg'
 DEST = MU / 'Platforms/Xiaomi/munchFreshPkg'
 EXPECTED_XBL = '696eaefeb4798b6c3427740232ae71006070b6bab079343cfe2a661363073c3b'
 

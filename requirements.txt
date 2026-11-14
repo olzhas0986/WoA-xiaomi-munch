@@ -1,0 +1,2 @@
+uefi_firmware==1.16
+unicorn==2.1.4
