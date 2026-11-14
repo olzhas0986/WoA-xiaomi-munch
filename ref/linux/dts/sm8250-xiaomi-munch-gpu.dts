@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: BSD-3-Clause
+#include "sm8250-xiaomi-munch-wifi.dts"
+/* Use the existing SM8250 GPU/GMU OPPs, SMMU and reserved gpu_mem.
+ * Signed ZAP must come from this munch; never substitute alioth's image.
+ * Display pipeline remains inherited simplefb; this tests rendering only.
+ */
+/ {
+ chosen {
+  /* Render-only: do not wait for a disabled display component master. */
+  bootargs = "console=tty0 rdinit=/init initcall_debug loglevel=8 clk_ignore_unused msm.separate_gpu_kms=1";
+ };
+};
+&gmu { status = "okay"; };
+&gpu {
+ status = "okay";
+ zap-shader {
+  firmware-name = "qcom/sm8250/xiaomi/munch/a650_zap.mbn";
+ };
+};

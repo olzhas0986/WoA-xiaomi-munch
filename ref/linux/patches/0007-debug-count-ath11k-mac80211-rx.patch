@@ -1,0 +1,46 @@
+--- a/drivers/net/wireless/ath/ath11k/dp_rx.c
++++ b/drivers/net/wireless/ath/ath11k/dp_rx.c
+@@ -18,6 +18,9 @@
+ #include "hal_rx.h"
+ #include "dp_tx.h"
+ #include "peer.h"
++#include <net/pmos_munch_rx_probe.h>
++
++PMOS_RX_COUNTER(rx_probe_reo_buffers);
+ 
+ #define ATH11K_DP_RX_FRAGMENT_TIMEOUT_MS (2 * HZ)
+ 
+@@ -2500,6 +2503,7 @@
+ 	    !(is_mcbc && rx_status->flag & RX_FLAG_DECRYPTED))
+ 		rx_status->flag |= RX_FLAG_8023;
+ 
++	pmos_rx_probe_count(msdu);
+ 	ieee80211_rx_napi(ar->hw, pubsta, msdu, napi);
+ }
+ 
+@@ -2710,6 +2714,7 @@
+ 				 DMA_FROM_DEVICE);
+ 
+ 		num_buffs_reaped[mac_id]++;
++		atomic64_inc(&rx_probe_reo_buffers);
+ 
+ 		push_reason = FIELD_GET(HAL_REO_DEST_RING_INFO0_PUSH_REASON,
+ 					desc->info0);
+--- a/net/mac80211/rx.c
++++ b/net/mac80211/rx.c
+@@ -23,6 +23,7 @@
+ #include <net/mac80211.h>
+ #include <net/ieee80211_radiotap.h>
+ #include <linux/unaligned.h>
++#include <net/pmos_munch_rx_probe.h>
+ 
+ #include "ieee80211_i.h"
+ #include "driver-ops.h"
+@@ -5739,6 +5740,7 @@
+ 	struct sk_buff *tmp;
+ 	LIST_HEAD(list);
+ 
++	pmos_rx_probe_count(skb);
+ 
+ 	/*
+ 	 * key references and virtual interfaces are protected using RCU

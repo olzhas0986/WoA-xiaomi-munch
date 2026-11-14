@@ -1,0 +1,38 @@
+// SPDX-License-Identifier: BSD-3-Clause
+#include "sm8250-xiaomi-munch.dts"
+
+&apps_rsc {
+ regulators-usb {
+  compatible = "qcom,pm8150-rpmh-regulators";
+  qcom,pmic-id = "a";
+  /* Stock munch overlay 21: ldoa5=880000, ldoa12=1800000, ldoa2=3072000 uV.
+   * See docs/stock-usb-evidence.json. Do not substitute the old MTP voltages.
+   * TEMPORARY WORKAROUND: physical input topology is not verified. Omit input
+   * supply phandles instead of inventing parent rails. Regulator core resolves
+   * these missing parents to dummy; H reports UPSTREAM=UNMODELED explicitly.
+   * The three output regulators below are real RPMh resources, not dummy PHY
+   * supplies. Firmware retains responsibility for unmodeled input power.
+   */
+  usb_l5a: ldo5 {
+   regulator-name = "munch_usb_l5a";
+   regulator-min-microvolt = <880000>;
+   regulator-max-microvolt = <880000>;
+   /* TEMPORARY WORKAROUND: keep this test resource on before a PHY consumes it. */
+   regulator-always-on;
+  };
+  usb_l12a: ldo12 {
+   regulator-name = "munch_usb_l12a";
+   regulator-min-microvolt = <1800000>;
+   regulator-max-microvolt = <1800000>;
+   /* TEMPORARY WORKAROUND: keep this test resource on before a PHY consumes it. */
+   regulator-always-on;
+  };
+  usb_l2a: ldo2 {
+   regulator-name = "munch_usb_l2a";
+   regulator-min-microvolt = <3072000>;
+   regulator-max-microvolt = <3072000>;
+   /* TEMPORARY WORKAROUND: keep this test resource on before a PHY consumes it. */
+   regulator-always-on;
+  };
+ };
+};

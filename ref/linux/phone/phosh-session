@@ -1,0 +1,28 @@
+#!/bin/sh
+# Invoked by phoc inside dbus-run-session; keyboard shares bus + Wayland socket.
+set -eu
+[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] || { echo 'Missing session D-Bus'; exit 1; }
+[ -n "${WAYLAND_DISPLAY:-}" ] || { echo 'Missing compositor Wayland socket'; exit 1; }
+export GDK_BACKEND=wayland
+if [ "$(gsettings get org.gnome.desktop.input-sources sources)" = '@a(ss) []' ]; then
+ gsettings set org.gnome.desktop.input-sources sources "[('xkb', 'us')]"
+fi
+gsettings set sm.puri.phosh shell-layout device
+# Import only the session display environment for D-Bus activated applications.
+if command -v dbus-update-activation-environment >/dev/null; then
+ dbus-update-activation-environment WAYLAND_DISPLAY XDG_RUNTIME_DIR XDG_CURRENT_DESKTOP GDK_BACKEND
+fi
+squeekboard >/tmp/squeekboard.log 2>&1 &
+osk=$!
+/usr/libexec/phosh -U &
+shell=$!
+cleanup() {
+ trap - 0
+ kill "$osk" "$shell" 2>/dev/null || :
+ wait "$osk" 2>/dev/null || :
+ wait "$shell" 2>/dev/null || :
+}
+trap cleanup 0
+trap 'exit 130' INT
+trap 'exit 143' TERM
+wait "$shell"

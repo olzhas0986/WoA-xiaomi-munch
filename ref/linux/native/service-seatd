@@ -1,0 +1,14 @@
+#!/sbin/openrc-run
+description="Seat access for the unprivileged pmOS desktop"
+supervisor=supervise-daemon
+command=$(command -v seatd)
+command_args="-g video"
+export SEATD_VTBOUND=0
+respawn_delay=2
+respawn_max=3
+respawn_period=60
+output_log=/var/log/pmos-munch-seatd.log
+error_log=/var/log/pmos-munch-seatd.log
+depend() {
+ need udev-settle
+}

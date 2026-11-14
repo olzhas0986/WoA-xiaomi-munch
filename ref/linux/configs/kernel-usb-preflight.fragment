@@ -1,0 +1,3 @@
+# Preflight A: only enable the missing RPMh OPP framework dependency.
+# PM_OPP is hidden; patches/0001-* supplies the selecting Kconfig dependency.
+CONFIG_PM_OPP=y

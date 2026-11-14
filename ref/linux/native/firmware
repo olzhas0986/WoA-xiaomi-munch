@@ -1,0 +1,38 @@
+#!/bin/sh
+set -eu
+fw=/usr/lib/firmware
+[ -d "$fw/qcom" ] || fw=/lib/firmware
+printf '%s\n' "$fw" > /sys/module/firmware_class/parameters/path
+if [ -r /etc/pmos-munch/wifi-module-release ]; then
+ release=$(cat /etc/pmos-munch/wifi-module-release)
+ [ "$release" = "$(uname -r)" ] || { echo 'Wi-Fi module release mismatch'; exit 1; }
+ echo "Loading ath11k_pci from RAM rootfs modules ($release)"
+ modprobe pci-pwrctrl-pwrseq
+ modprobe ath11k_pci
+ n=0
+ while [ "$n" -lt 30 ]; do
+  for phy in /sys/class/ieee80211/*; do [ ! -e "$phy" ] || exit 0; done
+  sleep 1; n=$((n+1))
+ done
+ echo 'Modular QCA6390 did not become ready'; exit 1
+fi
+for phy in /sys/class/ieee80211/*; do [ ! -e "$phy" ] || exit 0; done
+# QCA6390 failed its first probe before rootfs firmware became available.
+for device in /sys/bus/pci/devices/*; do
+ [ -r "$device/vendor" ] && [ -r "$device/device" ] || continue
+ [ "$(cat "$device/vendor")" = 0x17cb ] && [ "$(cat "$device/device")" = 0x1101 ] || continue
+ id=${device##*/}
+ driver=/sys/bus/pci/drivers/ath11k_pci
+ if [ -L "$device/driver" ]; then
+  [ -e "$driver/$id" ] || { echo 'QCA6390 has an unexpected driver'; exit 1; }
+  printf '%s' "$id" > "$driver/unbind"
+ fi
+ printf '%s' "$id" > "$driver/bind"
+ n=0
+ while [ "$n" -lt 30 ]; do
+  for phy in /sys/class/ieee80211/*; do [ ! -e "$phy" ] || exit 0; done
+  sleep 1; n=$((n+1))
+ done
+ echo 'QCA6390 did not become ready'; exit 1
+done
+echo 'QCA6390 PCI device missing'; exit 1

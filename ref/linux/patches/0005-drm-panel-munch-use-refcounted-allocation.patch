@@ -1,0 +1,25 @@
+diff --git a/drivers/gpu/drm/panel/panel-xiaomi-munch-l11r.c b/drivers/gpu/drm/panel/panel-xiaomi-munch-l11r.c
+--- a/drivers/gpu/drm/panel/panel-xiaomi-munch-l11r.c
++++ b/drivers/gpu/drm/panel/panel-xiaomi-munch-l11r.c
+@@ -170,9 +170,10 @@
+  int ret;
+  if (!dsi->host->ops->transfer)
+   return -EOPNOTSUPP;
+- ctx = devm_kzalloc(dev, sizeof(*ctx), GFP_KERNEL);
+- if (!ctx)
+-  return -ENOMEM;
++ ctx = devm_drm_panel_alloc(dev, struct l11r, panel,
++                            &l11r_funcs, DRM_MODE_CONNECTOR_DSI);
++ if (IS_ERR(ctx))
++  return PTR_ERR(ctx);
+  ctx->dsi = dsi;
+  ctx->vddio = devm_regulator_get(dev, "vddio");
+  if (IS_ERR(ctx->vddio))
+@@ -194,7 +195,6 @@
+  dsi->mode_flags = MIPI_DSI_MODE_LPM | MIPI_DSI_CLOCK_NON_CONTINUOUS;
+  dsi->dsc = &ctx->dsc;
+  mipi_dsi_set_drvdata(dsi, ctx);
+- drm_panel_init(&ctx->panel, dev, &l11r_funcs, DRM_MODE_CONNECTOR_DSI);
+  ctx->panel.prepare_prev_first = true;
+  ctx->panel.backlight = devm_backlight_device_register(dev, "munch-l11r", dev,
+                  ctx, &l11r_backlight_ops, &props);

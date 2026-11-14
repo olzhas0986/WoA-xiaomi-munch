@@ -1,0 +1,20 @@
+{
+  "xbl.img": {
+    "size": 8060928,
+    "sha256": "696eaefeb4798b6c3427740232ae71006070b6bab079343cfe2a661363073c3b"
+  },
+  "live.dtb": {
+    "size": 810536,
+    "sha256": "8b2beab345ca8c35ff7c39c7e3e526708c2da37ffa5af55d3784b42a1552d366"
+  },
+  "extraction": {
+    "modules": 91,
+    "executable_patches": false
+  },
+  "reference": {
+    "repository": "https://github.com/danya2271/ios-munch",
+    "tree_sha": "4c8e0ef3c4a7c96d5e98784095baedeb797f3c49",
+    "expected_xbl_sha256": "1535264ea3b12c3aa5d06bd697fdc4df210c8089a63672e92a5d10cfcef86f2e",
+    "expected_xbl_matches": false
+  }
+}

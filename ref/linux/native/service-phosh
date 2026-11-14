@@ -1,0 +1,29 @@
+#!/sbin/openrc-run
+description="Phosh session for user pmos on the native DSI panel"
+supervisor=supervise-daemon
+command=/usr/local/libexec/pmos-munch-native-phosh
+command_user=pmos:pmos
+respawn_delay=3
+respawn_max=3
+respawn_period=60
+output_log=/var/log/pmos-munch-phosh.log
+error_log=/var/log/pmos-munch-phosh.log
+depend() {
+ need dbus pmos-munch-seatd
+ use pmos-munch-firmware
+ after networkmanager
+}
+start_pre() {
+ uid=$(id -u pmos) || return 1
+ # supervise-daemon opens logs after dropping privileges to command_user.
+ # Create the file as root without truncating earlier startup diagnostics.
+ checkpath -f -m0640 -o pmos:pmos "$output_log" || return 1
+ checkpath -d -m0755 /run/user || return 1
+ checkpath -d -m0700 -o pmos:pmos "/run/user/$uid" || return 1
+ [ -e /dev/dri/renderD128 ] || { eerror 'GPU render node is missing'; return 1; }
+ n=0
+ while [ ! -S /run/seatd.sock ]; do
+  [ "$n" -lt 10 ] || { eerror 'seatd socket missing'; return 1; }
+  sleep 1; n=$((n+1))
+ done
+}

@@ -1,0 +1,13 @@
+{
+  "name": "Xiaomi POCO F4 (provisional camera guard)",
+  "x-res": 1080,
+  "y-res": 2400,
+  "width": 70,
+  "height": 155,
+  "cutouts": [
+    {
+      "name": "camera-guard",
+      "path": "M 480 0 H 600 V 96 H 480 Z"
+    }
+  ]
+}

@@ -1,0 +1,126 @@
+# Sourced by /init before it has started any userspace background jobs.
+# Only PID1 may execute switch_root. All configuration writes target RAM.
+native_acm_rescue() {
+ # Start only after a failed handoff preparation, never on the success path.
+ while :; do
+  serial=/dev/ttyGS0
+  [ -c "$serial" ] || serial=/pmos/dev/ttyGS0
+  if [ -c "$serial" ]; then
+   setsid sh -c '
+    exec 0<"$1" 1>"$1" 2>&1
+    stty sane || :
+    export PS1="pmos-rescue# "
+    echo "pmos-munch native recovery; inspect dmesg and /run/pmos-munch-native-preflight.log"
+    exec sh -i
+   ' sh "$serial"
+  fi
+  sleep 1
+ done
+}
+native_rescue() {
+ echo "NATIVE BOOT STOPPED: $*"
+ for log in /dev/kmsg /pmos/dev/kmsg; do
+  [ -c "$log" ] || continue
+  printf '<3>pmos-munch: native boot stopped: %s\n' "$*" > "$log"
+  break
+ done
+ echo 'RAM rescue shell. Original USB archive is unchanged. Do not flash.'
+ echo 'Reconnect the PC for the USB ACM recovery console.'
+ native_acm_rescue &
+ while :; do setsid cttyhack sh; sleep 1; done
+}
+[ "$$" = 1 ] || native_rescue 'switch_root must be run by PID1'
+# Select the USB partition by sysfs ancestry and archive presence, not sd letter.
+native_usb() {
+ path=$(readlink -f "/sys/class/block/$1") || return 1
+ case "$path" in /sys/devices/*) ;; *) return 1;; esac
+ while [ "$path" != /sys/devices ] && [ "$path" != / ]; do
+  [ "$(readlink -f "$path/subsystem" 2>/dev/null)" != /sys/bus/usb ] || return 0
+  path=${path%/*}
+ done
+ return 1
+}
+echo 'Native pmOS test: connect OTG + rootfs stick within 10 seconds.'
+sleep 10
+mkdir -p /mnt/native-probe
+selected=
+n=0
+while [ "$n" -lt 20 ] && [ -z "$selected" ]; do
+ for block in /sys/class/block/sd*; do
+  [ -e "$block" ] || continue
+  name=${block##*/}
+  case "$name" in sd[a-z]|sd[a-z][1-9]|sd[a-z][1-9][0-9]) ;; *) continue;; esac
+  native_usb "$name" || continue
+  [ -b "/dev/$name" ] || continue
+  mount -t ntfs3 -o ro,nosuid,nodev,noexec "/dev/$name" /mnt/native-probe 2>/dev/null || continue
+  for file in postmarketos-desktop.tar.gz postmarketos-aarch64-console.tar.gz rootfs.tar.gz; do
+   [ ! -f "/mnt/native-probe/$file" ] || selected="/dev/$name"
+  done
+  umount /mnt/native-probe || native_rescue 'cannot unmount probe'
+  [ -z "$selected" ] || break
+ done
+ [ -n "$selected" ] || { sleep 1; n=$((n+1)); }
+done
+[ -n "$selected" ] || native_rescue 'no NTFS USB rootfs archive found'
+echo "Loading native rootfs from $selected"
+/bin/pmos-usb-worker "$selected" || native_rescue 'rootfs load failed'
+/bin/pmos-tools-install || native_rescue 'phone helper installation failed'
+mkdir -p /pmos/usr/local/libexec /pmos/usr/local/sbin /pmos/etc/init.d /pmos/etc/pmos-munch
+for name in prepare firmware phosh; do
+ cp "/etc/pmos-munch/native/$name" "/pmos/usr/local/libexec/pmos-munch-native-$name" || native_rescue 'native helper copy'
+ chmod 755 "/pmos/usr/local/libexec/pmos-munch-native-$name"
+done
+cp /etc/pmos-munch/native/console /pmos/usr/local/sbin/pmos-munch-native-console || native_rescue 'console copy'
+chmod 755 /pmos/usr/local/sbin/pmos-munch-native-console
+for name in firmware seatd phosh; do
+ cp "/etc/pmos-munch/native/service-$name" "/pmos/etc/init.d/pmos-munch-$name" || native_rescue 'service copy'
+ chmod 755 "/pmos/etc/init.d/pmos-munch-$name"
+done
+# switch_root deletes initramfs, so preserve the board's signed ZAP first.
+fw=/pmos/usr/lib/firmware
+[ -d "$fw/qcom" ] || fw=/pmos/lib/firmware
+zap=qcom/sm8250/xiaomi/munch
+mkdir -p "$fw/$zap"
+for file in /lib/firmware/"$zap"/a650_zap.*; do
+ [ -f "$file" ] || continue
+ cp "$file" "$fw/$zap/" || native_rescue 'ZAP copy failed'
+done
+# Temporary device visibility is needed even for command -v >/dev/null.
+# Modules are staged as data, never loaded in the bootstrap root.
+rm -f /pmos/etc/pmos-munch/wifi-module-release
+if [ -r /etc/pmos-munch/modules.release ]; then
+ release=$(cat /etc/pmos-munch/modules.release)
+ [ "$release" = "$(uname -r)" ] || native_rescue 'kernel module release mismatch'
+ mkdir -p "/pmos/lib/modules/$release"
+ cp -a /etc/pmos-munch/kernel-modules/. "/pmos/lib/modules/$release/" || native_rescue 'kernel module installation failed'
+ printf '%s\n' "$release" > /pmos/etc/pmos-munch/wifi-module-release
+fi
+# Unbind it on both outcomes before the final mount --move sequence.
+mkdir -p /pmos/dev
+mount -o bind /dev /pmos/dev || native_rescue 'preflight dev bind failed'
+if ! chroot /pmos /usr/local/libexec/pmos-munch-native-prepare > /run/pmos-munch-native-preflight.log 2>&1; then
+ cat /run/pmos-munch-native-preflight.log
+ if [ -c /dev/kmsg ]; then
+  while IFS= read -r line; do
+   printf '<3>pmos-munch: preflight: %s\n' "$line" > /dev/kmsg
+  done < /run/pmos-munch-native-preflight.log
+ fi
+ umount /pmos/dev || native_rescue 'preflight failed and dev unbind failed'
+ native_rescue 'native profile preflight failed'
+fi
+cat /run/pmos-munch-native-preflight.log
+umount /pmos/dev || native_rescue 'preflight dev unbind failed'
+# End temporary preflight mounts.
+# All fallible profile/ABI checks finish before moving the pseudo filesystems.
+# No daemons were started in initramfs. Child mounts travel with /dev and /sys.
+mkdir -p /pmos/dev /pmos/proc /pmos/sys /pmos/run
+mount -t tmpfs -o mode=0755,size=128M tmpfs /pmos/run || native_rescue 'run mount'
+printf 'native\n' > /pmos/run/pmos-munch-native
+# Reset the obsolete chroot firmware prefix before any new userspace starts.
+printf '\n' > /sys/module/firmware_class/parameters/path
+cd /
+for directory in dev sys proc; do
+ mount --move "/$directory" "/pmos/$directory" || native_rescue "moving $directory failed; reboot with recovery image"
+done
+echo 'Starting pmOS init as PID1; OpenRC will manage the services.'
+exec /bin/busybox switch_root -c /dev/console /pmos /sbin/init

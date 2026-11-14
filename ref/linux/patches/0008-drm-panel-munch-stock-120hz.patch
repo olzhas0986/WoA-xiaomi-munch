@@ -1,0 +1,186 @@
+diff --git a/drivers/gpu/drm/panel/panel-xiaomi-munch-l11r.c b/drivers/gpu/drm/panel/panel-xiaomi-munch-l11r.c
+--- a/drivers/gpu/drm/panel/panel-xiaomi-munch-l11r.c
++++ b/drivers/gpu/drm/panel/panel-xiaomi-munch-l11r.c
+@@ -1,5 +1,5 @@
+ // SPDX-License-Identifier: GPL-2.0-only
+-/* POCO F4 L11R 38:08:0a: stock command stream, initially one 60 Hz mode.
++/* POCO F4 L11R 38:08:0a: stock 60/120 Hz commands, fixed rate selected at probe.
+  * Provenance and remaining hardware assumptions: docs/pmos-display.md.
+  */
+ #include <linux/backlight.h>
+@@ -7,6 +7,7 @@
+ #include <linux/gpio/consumer.h>
+ #include <linux/module.h>
+ #include <linux/of.h>
++#include <linux/property.h>
+ #include <linux/regulator/consumer.h>
+ #include <drm/display/drm_dsc.h>
+ #include <drm/drm_connector.h>
+@@ -20,6 +21,7 @@
+  u8 payload[129];
+ };
+ #include "munch-l11r-init.h"
++#include "munch-l11r-120.h"
+ 
+ struct l11r {
+  struct drm_panel panel;
+@@ -27,6 +29,7 @@
+  struct regulator *vddio, *vci;
+  struct gpio_desc *reset;
+  struct drm_dsc_config dsc;
++ unsigned int refresh_rate;
+  bool prepared;
+ };
+ 
+@@ -77,11 +80,14 @@
+  msleep(12);
+  gpiod_set_value_cansleep(ctx->reset, 0);
+  msleep(10);
+- ret = l11r_send(ctx, l11r_on, ARRAY_SIZE(l11r_on));
++ if (ctx->refresh_rate == 120)
++  ret = l11r_send(ctx, l11r_on_120, ARRAY_SIZE(l11r_on_120));
++ else
++  ret = l11r_send(ctx, l11r_on, ARRAY_SIZE(l11r_on));
+  if (ret)
+   goto disable_vci;
+  ctx->prepared = true;
+- dev_info(&ctx->dsi->dev, "L11R stock 60 Hz sequence sent\n");
++ dev_info(&ctx->dsi->dev, "L11R stock %u Hz sequence sent\n", ctx->refresh_rate);
+  return 0;
+ disable_vci:
+  gpiod_set_value_cansleep(ctx->reset, 1);
+@@ -96,6 +102,8 @@
+  struct l11r *ctx = to_l11r(panel);
+  if (!ctx->prepared)
+   return 0;
++ if (ctx->refresh_rate == 120)
++  return l11r_send(ctx, l11r_off_120, ARRAY_SIZE(l11r_off_120));
+  return l11r_send(ctx, l11r_off, ARRAY_SIZE(l11r_off));
+ }
+ 
+@@ -113,18 +121,27 @@
+  return ret ? ret : ret_io;
+ }
+ 
+-static const struct drm_display_mode l11r_mode = {
++static const struct drm_display_mode l11r_modes[] = { {
+  .clock = (1080 + 16 + 8 + 8) * (2400 + 600 + 32 + 560) * 60 / 1000,
+  .hdisplay = 1080, .hsync_start = 1080 + 16,
+  .hsync_end = 1080 + 16 + 8, .htotal = 1080 + 16 + 8 + 8,
+  .vdisplay = 2400, .vsync_start = 2400 + 600,
+  .vsync_end = 2400 + 600 + 32, .vtotal = 2400 + 600 + 32 + 560,
+  .type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED,
+-};
++}, {
++ .clock = (1080 + 16 + 8 + 8) * (2400 + 4 + 4 + 8) * 120 / 1000,
++ .hdisplay = 1080, .hsync_start = 1080 + 16,
++ .hsync_end = 1080 + 16 + 8, .htotal = 1080 + 16 + 8 + 8,
++ .vdisplay = 2400, .vsync_start = 2400 + 4,
++ .vsync_end = 2400 + 4 + 4, .vtotal = 2400 + 4 + 4 + 8,
++ .type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED,
++} };
+ 
+ static int l11r_get_modes(struct drm_panel *panel, struct drm_connector *connector)
+ {
+- struct drm_display_mode *mode = drm_mode_duplicate(connector->dev, &l11r_mode);
++ struct l11r *ctx = to_l11r(panel);
++ struct drm_display_mode *mode = drm_mode_duplicate(connector->dev,
++                       &l11r_modes[ctx->refresh_rate == 120]);
+  if (!mode)
+   return -ENOMEM;
+  drm_mode_set_name(mode);
+@@ -175,6 +192,14 @@
+  if (IS_ERR(ctx))
+   return PTR_ERR(ctx);
+  ctx->dsi = dsi;
++ ctx->refresh_rate = 60;
++ if (device_property_present(dev, "xiaomi,refresh-rate")) {
++  ret = device_property_read_u32(dev, "xiaomi,refresh-rate", &ctx->refresh_rate);
++  if (ret)
++   return dev_err_probe(dev, ret, "refresh rate\n");
++ }
++ if (ctx->refresh_rate != 60 && ctx->refresh_rate != 120)
++  return dev_err_probe(dev, -EINVAL, "unsupported refresh rate\n");
+  ctx->vddio = devm_regulator_get(dev, "vddio");
+  if (IS_ERR(ctx->vddio))
+   return dev_err_probe(dev, PTR_ERR(ctx->vddio), "vddio supply\n");
+@@ -206,7 +231,7 @@
+   drm_panel_remove(&ctx->panel);
+   return dev_err_probe(dev, ret, "DSI attach\n");
+  }
+- dev_info(dev, "L11R 38:08:0a attached (1080x2400, 60 Hz, DSC)\n");
++ dev_info(dev, "L11R 38:08:0a attached (1080x2400, %u Hz, DSC)\n", ctx->refresh_rate);
+  return 0;
+ }
+ 
+diff --git a/drivers/gpu/drm/panel/munch-l11r-120.h b/drivers/gpu/drm/panel/munch-l11r-120.h
+--- /dev/null
++++ b/drivers/gpu/drm/panel/munch-l11r-120.h
+@@ -0,0 +1,67 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/* Generated from user-supplied stock DT; do not edit packet bytes.
++ * DT SHA256: 2905cbf3325290d68f6cf14d835095158eaa1e54b67f82d97ec45c418c2e06ef
++ * Android selection: qcom,mdss_dsi_l11r_38_08_0a_dsc_cmd
++ */
++static const struct l11r_cmd l11r_on_120[] = {
++ { 0x05, 0, 0, 10, 2, { 0x11, 0x00 } },
++ { 0x39, 0, 0, 0, 2, { 0x35, 0x00 } },
++ { 0x39, 0, 0, 0, 2, { 0x9d, 0x01 } },
++ { 0x39, 0, 0, 0, 129, { 0x9e, 0x11, 0x00, 0x00, 0x89, 0x30, 0x80, 0x09, 0x60, 0x04, 0x38, 0x00, 0x08, 0x02, 0x1c, 0x02, 0x1c, 0x02, 0x00, 0x02, 0x0e, 0x00, 0x20, 0x00, 0xbb, 0x00, 0x07, 0x00, 0x0c, 0x0d, 0xb7, 0x0c, 0xb7, 0x18, 0x00, 0x10, 0xf0, 0x03, 0x0c, 0x20, 0x00, 0x06, 0x0b, 0x0b, 0x33, 0x0e, 0x1c, 0x2a, 0x38, 0x46, 0x54, 0x62, 0x69, 0x70, 0x77, 0x79, 0x7b, 0x7d, 0x7e, 0x01, 0x02, 0x01, 0x00, 0x09, 0x40, 0x09, 0xbe, 0x19, 0xfc, 0x19, 0xfa, 0x19, 0xf8, 0x1a, 0x38, 0x1a, 0x78, 0x1a, 0xb6, 0x2a, 0xf6, 0x2b, 0x34, 0x2b, 0x74, 0x3b, 0x74, 0x6b, 0xf4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } },
++ { 0x39, 0, 0, 0, 5, { 0x2a, 0x00, 0x00, 0x04, 0x37 } },
++ { 0x39, 0, 0, 0, 5, { 0x2b, 0x00, 0x00, 0x09, 0x5f } },
++ { 0x39, 0, 0, 0, 3, { 0xf0, 0x5a, 0x5a } },
++ { 0x39, 0, 0, 0, 2, { 0xb0, 0x01 } },
++ { 0x39, 0, 0, 0, 2, { 0xb7, 0x4f } },
++ { 0x39, 0, 0, 0, 3, { 0xf0, 0xa5, 0xa5 } },
++ { 0x39, 0, 0, 0, 3, { 0xf0, 0x5a, 0x5a } },
++ { 0x39, 0, 0, 0, 2, { 0xb0, 0x02 } },
++ { 0x39, 0, 0, 0, 5, { 0xec, 0x00, 0xc0, 0xc3, 0x43 } },
++ { 0x39, 0, 0, 0, 2, { 0xb0, 0x0d } },
++ { 0x39, 0, 0, 0, 2, { 0xec, 0x19 } },
++ { 0x39, 0, 0, 0, 2, { 0xb0, 0x06 } },
++ { 0x39, 0, 0, 0, 2, { 0xe4, 0xd0 } },
++ { 0x39, 0, 0, 0, 3, { 0xf0, 0xa5, 0xa5 } },
++ { 0x39, 0, 0, 0, 3, { 0xf0, 0x5a, 0x5a } },
++ { 0x39, 0, 0, 0, 2, { 0xb0, 0x36 } },
++ { 0x39, 0, 0, 0, 2, { 0xd3, 0x0f } },
++ { 0x39, 0, 0, 0, 2, { 0xf7, 0x03 } },
++ { 0x39, 0, 0, 0, 3, { 0xf0, 0xa5, 0xa5 } },
++ { 0x39, 0, 0, 0, 3, { 0xf0, 0x5a, 0x5a } },
++ { 0x39, 0, 0, 0, 3, { 0xfc, 0x5a, 0x5a } },
++ { 0x39, 0, 0, 0, 2, { 0xb0, 0x01 } },
++ { 0x39, 0, 0, 0, 4, { 0xe4, 0xa6, 0x75, 0xa3 } },
++ { 0x39, 0, 0, 0, 15, { 0xe9, 0x11, 0x75, 0xa6, 0x75, 0xa3, 0x8d, 0x06, 0x20, 0x8c, 0xa2, 0x4e, 0x00, 0x32, 0x32 } },
++ { 0x39, 0, 0, 0, 3, { 0xfc, 0xa5, 0xa5 } },
++ { 0x39, 0, 0, 0, 3, { 0xf0, 0xa5, 0xa5 } },
++ { 0x39, 0, 0, 0, 3, { 0xf0, 0x5a, 0x5a } },
++ { 0x39, 0, 0, 0, 4, { 0xdf, 0x83, 0x00, 0x10 } },
++ { 0x39, 0, 0, 0, 2, { 0xb0, 0x01 } },
++ { 0x39, 0, 0, 0, 2, { 0xe6, 0x01 } },
++ { 0x39, 0, 0, 0, 3, { 0xf0, 0xa5, 0xa5 } },
++ { 0x39, 0, 0, 0, 3, { 0xf0, 0x5a, 0x5a } },
++ { 0x39, 0, 0, 0, 2, { 0xb0, 0x08 } },
++ { 0x39, 0, 0, 0, 2, { 0xd4, 0x05 } },
++ { 0x39, 0, 0, 0, 3, { 0xf0, 0xa5, 0xa5 } },
++ { 0x39, 0, 0, 0, 3, { 0xf0, 0x5a, 0x5a } },
++ { 0x39, 0, 0, 0, 3, { 0xfc, 0x5a, 0x5a } },
++ { 0x39, 0, 0, 0, 2, { 0xb0, 0x16 } },
++ { 0x39, 0, 0, 0, 2, { 0xd1, 0x2e } },
++ { 0x39, 0, 0, 0, 3, { 0xfc, 0xa5, 0xa5 } },
++ { 0x39, 0, 0, 90, 3, { 0xf0, 0xa5, 0xa5 } },
++ { 0x39, 0, 0, 0, 3, { 0xf0, 0x5a, 0x5a } },
++ { 0x39, 0, 0, 0, 2, { 0xb0, 0x06 } },
++ { 0x39, 0, 0, 0, 2, { 0xb7, 0x10 } },
++ { 0x39, 0, 0, 0, 2, { 0xb0, 0x05 } },
++ { 0x39, 0, 0, 0, 2, { 0xb7, 0x93 } },
++ { 0x39, 0, 0, 0, 3, { 0xf0, 0xa5, 0xa5 } },
++ { 0x39, 0, 0, 0, 2, { 0x53, 0x20 } },
++ { 0x39, 0, 0, 0, 3, { 0x51, 0x00, 0x00 } },
++ { 0x05, 0, 0, 0, 2, { 0x29, 0x00 } },
++ { 0x39, 0, 0, 0, 2, { 0x60, 0x10 } },
++};
++static const struct l11r_cmd l11r_off_120[] = {
++ { 0x05, 0, 0, 20, 2, { 0x28, 0x00 } },
++ { 0x39, 0, 0, 0, 2, { 0x53, 0x20 } },
++ { 0x05, 0, 0, 120, 2, { 0x10, 0x00 } },
++};

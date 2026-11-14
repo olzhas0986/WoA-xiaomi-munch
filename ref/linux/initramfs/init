@@ -1,0 +1,23 @@
+#!/bin/busybox sh
+export PATH=/bin:/sbin
+/bin/busybox --install -s /bin
+exec 0</dev/console 1>/dev/console 2>&1
+fatal() { echo "init: FAILED: $*"; exec sh; }
+mount -t devtmpfs devtmpfs /dev || fatal 'mount /dev'
+mount -t proc proc /proc || fatal 'mount /proc'
+mount -t sysfs sysfs /sys || fatal 'mount /sys'
+log() { echo "init: $*"; echo "init: $*" > /dev/kmsg; }
+log 'userspace alive'
+uname -a
+printf 'online CPUs: '; cat /sys/devices/system/cpu/online
+printf 'CPU count: '; grep -c '^processor' /proc/cpuinfo
+cat /proc/meminfo
+printf 'cmdline: '; cat /proc/cmdline
+dmesg > /run/dmesg.boot || fatal 'save dmesg'
+log 'dmesg saved in /run/dmesg.boot; starting local shell'
+# No USB gadget or storage writes. Without an input transport this is output only.
+while true; do
+ setsid cttyhack sh
+ log 'shell exited; restarting'
+ sleep 1
+done

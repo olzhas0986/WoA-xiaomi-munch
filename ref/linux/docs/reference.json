@@ -1,0 +1,15 @@
+{
+  "start.S": "41a9d2de93b096fad4e5d932f60e0adf46a99a33f71d3882595def20cd95c575",
+  "main.c": "bc05d3e308452ee6e2d0f40dcbb8a9c6fd59d6fb5f5cdc3bd33104e72e71830e",
+  "link.ld": "745347a526617d45af616699bdf4a1210743c8d7935ccbda8ef9769e7f2933c5",
+  "pack.py": "4903fde8b26618fbc4b14496ee1aee3ac2c43ba85205096759799d1891c49b8d",
+  "full.dtb": "ed1a3a447eee474c53ff9d091852224dc3d0b45a310cd0aad2975b0b8030efee",
+  "min.dts": "e2da418412c352827857b28132bcb22bdfa06e7572acdba012eddd17e1b46888",
+  "init.sh": "14b5da9808d2454b7529528ceb4fff9f7902ce70eba404e87d6ca57cfee477c9",
+  "mkinitramfs.py": "cb5cf27aa72887edb205a21756b7f0203eef36ba92b2c92fec149d907d6767ad",
+  "linux.img": "0006b7819ed2f4ef5fec9292043d064a3e9b9d7efc312e26c23a3dd4f0413cbe",
+  "stub.bin": "179f8996d870bfdfcc320676d0fe15af4abd51b882f1a84be4d7f1871e449c7d",
+  "/home/olzhas0986/linux/.config": "851b1cf3b939409f0cd92cdbbfe91e28d902f2c8f22d5f5024dc8712cd3c0d53",
+  "/home/olzhas0986/linux/arch/arm64/boot/dts/qcom/sm8250-xiaomi-munch.dts": "15d67ca6dd9bcb9ab6d47f5b0ea781025aacb2cc5aa07e4a10a1a8925d628e26",
+  "/home/olzhas0986/linux/arch/arm64/boot/dts/qcom/munch-usb.dtsi": "d112982c00e89d3f31f2908b929e1dfda868f124d254769153470b3ec28353cc"
+}

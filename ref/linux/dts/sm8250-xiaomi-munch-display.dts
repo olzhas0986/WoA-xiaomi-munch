@@ -1,0 +1,65 @@
+// SPDX-License-Identifier: BSD-3-Clause
+#include "sm8250-xiaomi-munch-gpu.dts"
+
+/* Android cmdline.txt explicitly selects L11R 38:08:0a. Supply and reset
+ * evidence is from supplied stock munch overlay 21; see pmOS display docs.
+ * Keep separate_gpu_kms=1: GPU render node and DPU scanout are independent.
+ */
+&apps_rsc {
+ regulators-usb {
+  display_l14a: ldo14 {
+   regulator-name = "munch_display_l14a";
+   regulator-min-microvolt = <1880000>;
+   regulator-max-microvolt = <1880000>;
+  };
+ };
+ regulators-wifi-c {
+  display_l11c: ldo11 {
+   regulator-name = "munch_display_l11c";
+   regulator-min-microvolt = <3000000>;
+   regulator-max-microvolt = <3000000>;
+  };
+ };
+};
+
+&tlmm {
+ display_reset: display-reset-state {
+  pins = "gpio12";
+  function = "gpio";
+  drive-strength = <8>;
+  bias-disable;
+ };
+ display_te: display-te-state {
+  pins = "gpio66";
+  function = "mdp_vsync";
+  drive-strength = <2>;
+  bias-pull-down;
+ };
+};
+
+&mdss { status = "okay"; };
+&mdss_mdp { status = "okay"; };
+&mdss_dsi0 {
+ status = "okay";
+ vdda-supply = <&wifi_l9a>;
+ panel@0 {
+  compatible = "xiaomi,munch-l11r-38080a";
+  reg = <0>;
+  pinctrl-names = "default";
+  pinctrl-0 = <&display_reset>, <&display_te>;
+  vddio-supply = <&display_l14a>;
+  vci-supply = <&display_l11c>;
+  reset-gpios = <&tlmm 12 GPIO_ACTIVE_LOW>;
+  port {
+   display_panel_in: endpoint { remote-endpoint = <&mdss_dsi0_out>; };
+  };
+ };
+};
+&mdss_dsi0_out {
+ remote-endpoint = <&display_panel_in>;
+ data-lanes = <0 1 2 3>;
+};
+&mdss_dsi0_phy {
+ status = "okay";
+ vdds-supply = <&usb_l5a>;
+};

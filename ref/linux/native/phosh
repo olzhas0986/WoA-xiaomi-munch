@@ -1,0 +1,44 @@
+#!/bin/sh
+# Foreground user session, managed by OpenRC; no detached root launcher.
+set -eu
+export HOME=/home/pmos USER=pmos LOGNAME=pmos
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=Phosh XDG_SESSION_DESKTOP=phosh
+export LIBSEAT_BACKEND=seatd SEATD_SOCK=/run/seatd.sock
+export WLR_BACKENDS=drm,libinput WLR_RENDERER=gles2
+export WLR_RENDER_DRM_DEVICE=/dev/dri/renderD128
+export G_RESOURCE_OVERLAYS=/mobi/phosh/gmobile/devices/display-panels=/usr/local/share/pmos-munch/display-panels
+unset DISPLAY WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE
+card=
+for connector in /sys/class/drm/card*-DSI-*; do
+ [ -r "$connector/status" ] || continue
+ [ "$(cat "$connector/status")" = connected ] || continue
+ name=${connector##*/}; card=${name%%-*}; break
+done
+[ -n "$card" ] || { echo 'No connected DSI display'; exit 1; }
+export WLR_DRM_DEVICES="/dev/dri/$card"
+cat > "$XDG_RUNTIME_DIR/phoc.ini" <<'CONFIG'
+[output:DSI-1]
+scale = 3
+CONFIG
+cd "$HOME"
+echo "Launching native Phoc: uid=$(id -u), KMS=$WLR_DRM_DEVICES, render=$WLR_RENDER_DRM_DEVICE"
+id
+# Supervise the session group, not just the dbus-run-session wrapper.
+# Without job control the setsid child is not already a process-group leader,
+# so setsid execs in place and $! is also the new session/process-group ID.
+set +m
+session_pid=
+stop_session() {
+ [ -n "$session_pid" ] || return 0
+ kill -TERM "-$session_pid" 2>/dev/null || :
+ session_pid=
+}
+trap 'stop_session' EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+setsid dbus-run-session -- phoc -v -C "$XDG_RUNTIME_DIR/phoc.ini" -E /usr/local/libexec/pmos-munch-phosh-session &
+session_pid=$!
+status=0
+wait "$session_pid" || status=$?
+exit "$status"

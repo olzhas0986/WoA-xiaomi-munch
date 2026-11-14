@@ -1,0 +1,7 @@
+# Preflight C: preserve OPP/IPCC and add the RPMh clock provider only.
+CONFIG_PM_OPP=y
+CONFIG_QCOM_IPCC=y
+CONFIG_COMMON_CLK_QCOM=y
+CONFIG_QCOM_CLK_RPMH=y
+# GCC owns display parent clocks; introduce it in a separate hardware test.
+# CONFIG_SM_GCC_8250 is not set

@@ -1,0 +1,11 @@
+#!/sbin/openrc-run
+description="Make RAM-root firmware available and load QCA6390"
+depend() {
+ need udev-settle
+ before networkmanager pmos-munch-phosh
+}
+start() {
+ ebegin "$description"
+ /usr/local/libexec/pmos-munch-native-firmware
+ eend $?
+}

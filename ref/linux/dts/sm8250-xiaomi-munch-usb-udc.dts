@@ -1,0 +1,18 @@
+// SPDX-License-Identifier: BSD-3-Clause
+#include "sm8250-xiaomi-munch-usb-phy.dts"
+
+&usb_1 {
+ /* USB2-only operation: route UTMI as PIPE clock without enabling QMP/USB3.
+  * This is the mainline SM8250 USB2 configuration, also used by elish.
+  */
+ qcom,select-utmi-as-pipe-clk;
+ status = "okay";
+};
+
+&usb_1_dwc3 {
+ dr_mode = "peripheral";
+ maximum-speed = "high-speed";
+ phys = <&usb_1_hsphy>;
+ phy-names = "usb2-phy";
+ /* Inherited SM8250 quirks stay unchanged. No speculative descriptor/LPM fix. */
+};

@@ -1,0 +1,383 @@
+#!/bin/busybox sh
+export PATH=/bin:/sbin
+/bin/busybox --install -s /bin
+exec 0</dev/console 1>/dev/console 2>&1
+fatal() { echo "K FAIL: $*"; exec sh; }
+mount -t devtmpfs devtmpfs /dev || fatal DEV
+mount -t proc proc /proc || fatal PROC
+mount -t sysfs sysfs /sys || fatal SYS
+# Install helpers in the small bootstrap root; all writes remain in RAM.
+cat > /bin/pmos-usb-worker <<'PMOS_MUNCH_HELPER'
+#!/bin/sh
+set -eu
+export PATH=/bin:/sbin
+fail() { echo "pmos-load: $*" >&2; exit 1; }
+mounted=0
+cleanup() {
+ status=$?
+ trap - 0
+ if [ "$mounted" = 1 ]; then umount /mnt/pmos-usb || echo 'pmos-load: USB unmount failed' >&2; fi
+ printf '%s\n' "$status" > /run/pmos-load.status
+ rmdir /run/pmos-load.lock 2>/dev/null || :
+ exit "$status"
+}
+trap cleanup 0
+trap 'exit 130' INT
+trap 'exit 143' TERM
+[ "$#" -le 1 ] || fail 'usage: pmos-load [USB partition; default /dev/sda1]'
+device=${1:-/dev/sda1}
+case "$device" in /dev/sd[a-z]|/dev/sd[a-z][1-9]|/dev/sd[a-z][1-9][0-9]) ;; *) fail 'expected a USB sd disk/partition';; esac
+if [ -f /pmos/.pmos-munch-ready ]; then echo 'PMOS READY in RAM. Run: pmos-enter'; exit 0; fi
+grep -q ' /pmos ' /proc/mounts && fail 'partial rootfs already mounted; reboot to retry'
+grep -q ' /mnt/pmos-usb ' /proc/mounts && fail 'USB mountpoint already in use'
+echo 'Connect OTG hub + NTFS stick now. Waiting 10 seconds...'
+sleep 10
+[ -b "$device" ] || fail "$device is absent; inspect /proc/partitions and dmesg"
+name=${device##*/}
+usb=0
+for path in /sys/bus/usb/devices/*/host*/target*/*/block/*; do
+ [ -e "$path" ] || continue
+ disk=${path##*/}
+ case "$name" in "$disk"|"$disk"[0-9]*) usb=1;; esac
+done
+[ "$usb" = 1 ] || fail 'device not identified under USB storage transport'
+available=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
+[ "${available:-0}" -ge 1572864 ] || fail 'need at least 1.5 GiB available RAM'
+mkdir -p /mnt/pmos-usb /pmos
+mount -t ntfs3 -o ro,nosuid,nodev,noexec "$device" /mnt/pmos-usb || fail 'NTFS read-only mount failed'
+mounted=1
+archive=
+for file in postmarketos-aarch64-console.tar.gz rootfs.tar.gz; do
+ if [ -f "/mnt/pmos-usb/$file" ]; then archive=/mnt/pmos-usb/$file; break; fi
+done
+[ -n "$archive" ] || fail 'rootfs archive not found in USB partition root'
+echo "Found $archive; checking SHA256 (USB may be slow)..."
+[ -f "$archive.sha256" ] || fail 'rootfs .sha256 file missing'
+expected=$(awk 'NR == 1 {print $1}' "$archive.sha256")
+[ "${#expected}" = 64 ] || fail 'invalid SHA256 length'
+case "$expected" in *[!0-9a-fA-F]*) fail 'invalid SHA256 characters';; esac
+printf '%s  %s\n' "$expected" "$archive" | sha256sum -c - || fail 'rootfs checksum mismatch'
+mount -t tmpfs -o size=1G,mode=0755 tmpfs /pmos || fail 'tmpfs mount failed'
+echo 'Extracting rootfs into RAM; wait for PMOS READY...'
+tar -xzpf "$archive" -C /pmos || fail 'extraction failed; reboot to retry'
+[ -x /pmos/bin/bash ] && [ -f /pmos/etc/os-release ] || fail 'incomplete rootfs'
+umount /mnt/pmos-usb || fail 'could not unmount USB partition'
+mounted=0
+printf 'ready\n' > /pmos/.pmos-munch-ready
+echo 'PMOS READY in RAM. USB stick is unmounted. Run: pmos-enter'
+PMOS_MUNCH_HELPER
+chmod 755 /bin/pmos-usb-worker
+cat > /bin/pmos-load <<'PMOS_MUNCH_HELPER'
+#!/bin/sh
+set -eu
+export PATH=/bin:/sbin
+[ "$#" -le 1 ] || { echo 'Usage: pmos-load [USB partition; default /dev/sda1]' >&2; exit 1; }
+device=${1:-/dev/sda1}
+case "$device" in /dev/sd[a-z]|/dev/sd[a-z][1-9]|/dev/sd[a-z][1-9][0-9]) ;; *) echo 'Expected USB sd disk/partition' >&2; exit 1;; esac
+if [ -f /pmos/.pmos-munch-ready ]; then echo 'PMOS READY. Run: pmos-enter'; exit 0; fi
+mkdir /run/pmos-load.lock 2>/dev/null || { echo 'pmos-load is already running; see /run/pmos-load.log' >&2; exit 1; }
+echo 'pmos-load started. Connect OTG + NTFS stick within 10 seconds.'
+echo 'Progress: phone display and /run/pmos-load.log. Then run pmos-enter.'
+# New session and console IO survive loss of the PC ACM controlling terminal.
+setsid sh -c '
+ exec 0</dev/null 1>/dev/console 2>&1
+ /bin/pmos-usb-worker "$@" 2>&1 | tee /run/pmos-load.log
+' sh "$device" &
+PMOS_MUNCH_HELPER
+chmod 755 /bin/pmos-load
+cat > /bin/pmos-enter <<'PMOS_MUNCH_HELPER'
+#!/bin/sh
+set -eu
+export PATH=/bin:/sbin
+[ -f /pmos/.pmos-munch-ready ] || { echo 'Rootfs not ready; run pmos-load.' >&2; exit 1; }
+grep -q '^tmpfs /pmos tmpfs ' /proc/mounts || { echo '/pmos is not our RAM filesystem' >&2; exit 1; }
+mkdir -p /pmos/dev /pmos/proc /pmos/sys /pmos/run /pmos/tmp /dev/pts
+grep -q ' /dev/pts ' /proc/mounts || mount -t devpts devpts /dev/pts
+grep -q ' /pmos/dev ' /proc/mounts || mount -o bind /dev /pmos/dev
+grep -q ' /pmos/dev/pts ' /proc/mounts || mount -o bind /dev/pts /pmos/dev/pts
+grep -q ' /pmos/proc ' /proc/mounts || mount -t proc proc /pmos/proc
+grep -q ' /pmos/sys ' /proc/mounts || mount -t sysfs -o ro sysfs /pmos/sys
+grep -q ' /pmos/run ' /proc/mounts || mount -t tmpfs -o size=64M,mode=0755 tmpfs /pmos/run
+chmod 1777 /pmos/tmp
+echo 'Entering postmarketOS/Nura userspace in RAM; exit returns to BusyBox.'
+echo 'Try: cat /etc/os-release ; apk --version ; uname -a'
+echo 'BusyBox remains PID1. No services or graphical UI are started.'
+cd /pmos
+exec chroot /pmos /usr/bin/env -i HOME=/root USER=root LOGNAME=root TERM=linux PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /bin/bash --noprofile --norc
+PMOS_MUNCH_HELPER
+chmod 755 /bin/pmos-enter
+# Full logs stay in RAM. The screen needs only a few transcribable fields.
+cat > /bin/wifi-start <<'PMOS_MUNCH_WIFI'
+#!/bin/sh
+set -eu
+[ -f /pmos/.pmos-munch-ready ] || { echo 'Run pmos-load first.'; exit 1; }
+fw=/pmos/usr/lib/firmware
+[ -d "$fw/ath11k/QCA6390/hw2.0" ] || fw=/pmos/lib/firmware
+[ -d "$fw/ath11k/QCA6390/hw2.0" ] || {
+ echo 'QCA6390 firmware missing. Use the Wi-Fi rootfs described in docs/pmos-wifi.md.'; exit 1;
+}
+echo "$fw" > /sys/module/firmware_class/parameters/path
+found=0
+for dev in /sys/bus/pci/devices/*; do
+ [ -f "$dev/vendor" ] || continue
+ [ "$(cat "$dev/vendor")" = 0x17cb ] || continue
+ [ "$(cat "$dev/device")" = 0x1101 ] || continue
+ found=1
+ if [ -d /sys/class/ieee80211 ]; then
+  for phy in /sys/class/ieee80211/*; do
+   [ -e "$phy" ] || continue
+   echo 'Wi-Fi PHY already present. Run pmos-enter, then iw dev.'; exit 0
+  done
+ fi
+ id=${dev##*/}
+ if [ -L "$dev/driver" ]; then
+  [ -e /sys/bus/pci/drivers/ath11k_pci/"$id" ] || { echo 'Unexpected PCI driver; stopping.'; exit 1; }
+  echo "$id" > /sys/bus/pci/drivers/ath11k_pci/unbind
+ fi
+ echo "$id" > /sys/bus/pci/drivers/ath11k_pci/bind
+ echo 'Firmware path set; waiting up to 30 seconds for Wi-Fi...'
+ n=0
+ while [ "$n" -lt 30 ]; do
+  for phy in /sys/class/ieee80211/*; do
+   [ -e "$phy" ] || continue
+   echo 'Wi-Fi PHY ready. Run pmos-enter, then iw dev.'; exit 0
+  done
+  sleep 1; n=$((n+1))
+ done
+ echo 'No Wi-Fi PHY. Collect dmesg | tail -n 100.'; exit 1
+done
+[ "$found" = 1 ] || { echo 'QCA6390 not enumerated. Collect dmesg and /sys/bus/pci/devices.'; exit 1; }
+PMOS_MUNCH_WIFI
+chmod 755 /bin/wifi-start
+
+cat > /bin/gpu-prepare <<'PMOS_MUNCH_GPU'
+#!/bin/sh
+set -eu
+[ -f /pmos/.pmos-munch-ready ] || { echo 'Run pmos-load first.'; exit 1; }
+fw=/pmos/usr/lib/firmware
+[ -d "$fw" ] || fw=/pmos/lib/firmware
+[ -r "$fw/qcom/sm8250/xiaomi/munch/a650_zap.mbn" ] || [ -r /lib/firmware/qcom/sm8250/xiaomi/munch/a650_zap.mbn ] || {
+ echo 'Signed munch ZAP missing; see docs/pmos-gpu.md. Do not substitute alioth firmware.'; exit 1;
+}
+for name in a650_sqe.fw a650_gmu.bin; do
+ found=0
+ for candidate in "$fw/qcom/$name" "$fw/qcom/$name.zst" "$fw/qcom/$name.xz" "$fw/$name" "$fw/$name.zst" "$fw/$name.xz"; do
+  [ ! -r "$candidate" ] || found=1
+ done
+ [ "$found" = 1 ] || { echo "Missing $name; install firmware-qcom-adreno-a650."; exit 1; }
+done
+echo "$fw" > /sys/module/firmware_class/parameters/path
+found=0
+for node in /dev/dri/renderD*; do
+ [ -e "$node" ] || continue
+ echo "Render node: $node (GPU execution still untested)"; found=1
+done
+[ "$found" = 1 ] || { echo 'No render node. Collect dmesg | tail -n 150 and devices_deferred.'; exit 1; }
+echo 'Firmware path ready. Run pmos-enter, then: EGL_PLATFORM=surfaceless eglinfo -B'
+echo 'Inspect the renderer: Adreno/Freedreno is hardware; llvmpipe/softpipe is CPU rendering.'
+PMOS_MUNCH_GPU
+chmod 755 /bin/gpu-prepare
+
+echo 'init: userspace alive: pmOS Adreno test T' > /dev/kmsg
+echo 'P: pmOS kernel preflight; current init is still BusyBox'
+echo 'Attach OTG keyboard; verify CPU, USB and local shell.'
+echo 'GPIO46 firmware gate retained; keyboard previously confirmed.'
+bound() {
+ for device in /sys/bus/platform/drivers/"$1"/*; do
+  if [ -d "$device" ] && [ -e "$device/of_node" ]; then
+   echo 1
+   return
+  fi
+ done
+ echo 0
+}
+cpu=$(grep -c '^processor' /proc/cpuinfo)
+rpmh=$(bound qcom-rpmhpd)
+ipcc=$(bound qcom-ipcc)
+aoss=$(bound qcom_aoss_qmp)
+rpmhcc=$(bound clk-rpmh)
+gcc=$(bound gcc-sm8250)
+pdc=$(bound qcom_pdc)
+bcm=$(bound bcm_voter)
+smmu=0
+if [ -e /sys/bus/platform/drivers/arm-smmu/15000000.iommu/of_node ]; then
+ smmu=1
+else
+ echo 'SMMU diagnostics (last 5 matching messages):'
+ dmesg | grep -iE 'smmu|iommu|15000000|defer' | tail -n 5
+fi
+# USB path endpoints from the inherited sm8250.dtsi. Check each actual binding.
+endpoint() {
+ if [ -e "/sys/bus/platform/drivers/qnoc-sm8250/$1.interconnect/of_node" ]; then
+  echo 1
+ else
+  echo 0
+ fi
+}
+a1=$(endpoint 16e0000)
+mc=$(endpoint 163d000)
+gem=$(endpoint 9100000)
+cn=$(endpoint 1500000)
+if [ "$bcm$a1$mc$gem$cn" != 11111 ]; then
+ echo 'Interconnect diagnostics (last 5 matching messages):'
+ dmesg | grep -iE 'interconnect|bcm|qnoc|defer' | tail -n 5
+fi
+if [ "$pdc" = 0 ]; then
+ echo "PDC diagnostics (last 5 matching messages):"
+ dmesg | grep -iE "pdc|b220000|defer" | tail -n 5
+fi
+dmesg > /run/dmesg.boot || fatal DMESG
+if [ "$rpmhcc" = 0 ] || [ "$gcc" = 0 ]; then
+ echo 'Clock diagnostics (last 5 matching messages):'
+ dmesg | grep -iE 'clk-rpmh|gcc-sm8250|clock-controller|missing RPMh|RPMh aux|register.*clock|defer' | tail -n 5
+fi
+# No terminal clear: preserve preceding errors. No delayed scrolling or paging.
+# Read framework state only: no userspace regulator writes.
+rail() {
+ for r in /sys/class/regulator/regulator.*; do
+  [ -r "$r/name" ] || continue
+  [ "$(cat "$r/name")" = "$1" ] || continue
+  uv=$(cat "$r/microvolts" 2>/dev/null)
+  state=$(cat "$r/state" 2>/dev/null)
+  if [ "$uv" = "$2" ] && [ "$state" = enabled ]; then echo 1; else echo 0; fi
+  echo "K $1 uv=$uv state=$state" > /dev/kmsg
+  return
+ done
+ echo 0
+}
+l5=$(rail munch_usb_l5a 880000)
+l12=$(rail munch_usb_l12a 1800000)
+l2=$(rail munch_usb_l2a 3072000)
+if [ "$l5$l12$l2" != 111 ]; then
+ dmesg | grep -iE 'regulator|ldoa|rpmh.*fail' | tail -n 5
+fi
+# Keep registration diagnostics and regulator tree for later retrieval.
+mount -t debugfs debugfs /sys/kernel/debug || echo 'K: debugfs unavailable'
+if [ -r /sys/kernel/debug/regulator/regulator_summary ]; then
+ cat /sys/kernel/debug/regulator/regulator_summary > /run/regulator-summary.boot
+fi
+dmesg > /run/dmesg.boot || fatal DMESG
+phy=$(bound qcom-snps-hs-femto-v2-phy)
+if [ "$phy" = 0 ]; then
+ dmesg | grep -iE '88e3000|femto|phy.*(fail|defer)|supply' | tail -n 5
+fi
+dmesg > /run/dmesg.boot || fatal DMESG
+wrapper=$(bound dwc3-qcom-legacy)
+core=$(bound dwc3)
+udc=0
+udc_name=
+state=absent
+speed=absent
+maximum=absent
+for u in /sys/class/udc/*; do
+ [ -d "$u" ] || continue
+ udc=$((udc + 1))
+ udc_name=${u##*/}
+ state=$(cat "$u/state")
+ speed=$(cat "$u/current_speed")
+ maximum=$(cat "$u/maximum_speed")
+ echo "K UDC=$u state=$state speed=$speed maximum=$maximum" > /dev/kmsg
+ # link_state is not a generic UDC sysfs attribute; record it only if exposed.
+ if [ -r "$u/link_state" ]; then cat "$u/link_state" > /run/udc-link-state; fi
+done
+if [ "$wrapper$core$udc" != 111 ]; then
+ dmesg | grep -iE 'dwc3|a600000|a6f8800|phy|smmu|defer' | tail -n 8
+fi
+dmesg > /run/dmesg.boot || fatal DMESG
+# Construct every descriptor before binding. All writes are to configfs/RAM.
+setup_acm() {
+ [ "$udc" = 1 ] || return 1
+ mount -t configfs configfs /sys/kernel/config || return 1
+ g=/sys/kernel/config/usb_gadget/munch
+ mkdir -p "$g" || return 1
+ # Linux Foundation development composite IDs, local bring-up only.
+ # These are not a VID/PID allocation for a distributed munch product.
+ echo 0x1d6b > "$g/idVendor" || return 1
+ echo 0x0104 > "$g/idProduct" || return 1
+ echo 0x0200 > "$g/bcdUSB" || return 1
+ echo 0x0001 > "$g/bcdDevice" || return 1
+ # IAD composite class; the ACM function supplies its own CDC descriptors.
+ echo 0xef > "$g/bDeviceClass" || return 1
+ echo 0x02 > "$g/bDeviceSubClass" || return 1
+ echo 0x01 > "$g/bDeviceProtocol" || return 1
+ mkdir -p "$g/strings/0x409" "$g/configs/c.1/strings/0x409" || return 1
+ echo munch-bringup > "$g/strings/0x409/serialnumber" || return 1
+ echo pmos-munch > "$g/strings/0x409/manufacturer" || return 1
+ echo 'munch USB2 ACM bring-up' > "$g/strings/0x409/product" || return 1
+ echo 'ACM shell' > "$g/configs/c.1/strings/0x409/configuration" || return 1
+ echo 0x80 > "$g/configs/c.1/bmAttributes" || return 1
+ # Descriptor advertises 100 mA; this does not configure PMIC charging.
+ echo 100 > "$g/configs/c.1/MaxPower" || return 1
+ mkdir "$g/functions/acm.usb0" || return 1
+ ln -s "$g/functions/acm.usb0" "$g/configs/c.1/acm.usb0" || return 1
+ [ -c /dev/ttyGS0 ] || return 1
+ echo "$udc_name" > "$g/UDC" || return 1
+ [ "$(cat "$g/UDC")" = "$udc_name" ] || return 1
+}
+acm=0
+if setup_acm; then
+ acm=1
+ # Open ttyGS0 after setsid so it becomes the controlling terminal.
+ # cttyhack would redirect to the active framebuffer console instead.
+ (
+  while true; do
+   setsid sh -c '
+    exec 0</dev/ttyGS0 1>/dev/ttyGS0 2>&1
+    # ttyGS has no set_termios callback; baud changes are rejected on readback.
+    stty sane || echo "ttyGS0: stty failed"
+    export PS1="munch# "
+    echo "pmos-munch: USB ACM root shell"
+    uname -a
+    exec sh -i
+   '
+   sleep 1
+  done
+ ) &
+ # One delayed snapshot: setup may finish before host enumeration does.
+ (
+  sleep 3
+  printf '\nK USB state=%s speed=%s max=%s\n' \
+   "$(cat "/sys/class/udc/$udc_name/state")" \
+   "$(cat "/sys/class/udc/$udc_name/current_speed")" \
+   "$(cat "/sys/class/udc/$udc_name/maximum_speed")"
+  dmesg > /run/dmesg.usb
+ ) &
+else
+ echo 'K: ACM setup failed; preserving local console'
+fi
+dmesg > /run/dmesg.boot || fatal DMESG
+printf '\n=== PMOS USB-TO-RAM TEST R ===\n'
+printf 'K CPU=%s RPMH=%s IPCC=%s AOSS=%s CLK=%s GCC=%s PDC=%s\n' \
+ "$cpu" "$rpmh" "$ipcc" "$aoss" "$rpmhcc" "$gcc" "$pdc"
+printf 'K BCM=%s A1=%s MC=%s GEM=%s CN=%s SMMU=%s\n' "$bcm" "$a1" "$mc" "$gem" "$cn" "$smmu"
+printf 'K L5=%s L12=%s L2=%s PHY=%s UPSTREAM=UNMODELED\n' "$l5" "$l12" "$l2" "$phy"
+printf 'K WRAP=%s CORE=%s UDC=%s\n' "$wrapper" "$core" "$udc"
+printf 'K state=%s speed=%s max=%s\n' "$state" "$speed" "$maximum"
+echo 'M: disconnect PC; connect OTG hub + keyboard (no flash drive yet).'
+echo 'Type uname -a at the local shell. ACM is optional in this image.'
+echo "M TYPEC=$(bound 'qcom,pmic-typec') VBUS=$(bound qcom-usb-vbus-regulator)"
+# Periodic short snapshots expose attachment failures without a working keyboard.
+(
+ for delay in 5 10 15 30; do
+  sleep "$delay"
+  echo 'M attachment snapshot:'
+  for role in /sys/class/usb_role/*/role; do
+   [ -r "$role" ] && cat "$role"
+  done
+  dmesg | grep -iE 'typec|tcpm|xhci|new .*USB|hid|vbus|spmi|error|failed' | tail -n 8
+  dmesg > /run/dmesg.otg
+ done
+) &
+echo 'R: Run pmos-load, then attach NTFS stick within 10 seconds.'
+echo 'S: Default device /dev/sda1; after PMOS READY run wifi-start, then pmos-enter.'
+echo 'P: Kernel config: zcat /proc/config.gz'
+printf 'P CPUs: '; cat /sys/devices/system/cpu/online
+printf 'P cgroups:\n'; cat /proc/cgroups
+printf 'P inotify watches: '; cat /proc/sys/fs/inotify/max_user_watches
+export PS1='munch# '
+
+while true; do
+ setsid cttyhack sh
+ echo 'K: shell exited; restarting'
+ sleep 1
+done

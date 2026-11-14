@@ -1,0 +1,125 @@
+// SPDX-License-Identifier: GPL-2.0-only OR BSD-2-Clause
+/* QCA6390 PMU topology derived from alioth:
+ * Copyright (c) 2025 Vitalii Skorkin <nikroks@mainlining.org>
+ */
+#include "sm8250-xiaomi-munch-usb-otg-keyboard.dts"
+#include <dt-bindings/gpio/gpio.h>
+/* See docs/pmos-wifi.md: stock munch power/PCIe evidence, alioth PMU topology. */
+/ {
+ chosen {
+  /* Preserve the hardware-tested USB/simplefb clock workaround. */
+  bootargs = "console=tty0 rdinit=/init initcall_debug loglevel=8 clk_ignore_unused";
+ };
+	qca6390-pmu {
+		compatible = "qcom,qca6390-pmu";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&bt_en_state>, <&wlan_en_state>;
+
+		vddaon-supply = <&wifi_s6a>;
+		vddpmu-supply = <&wifi_s6a>;
+		vddrfa0p95-supply = <&wifi_s6a>;
+		vddrfa1p3-supply = <&wifi_s8c>;
+		vddrfa1p9-supply = <&wifi_s5a>;
+		vddpcie1p3-supply = <&wifi_s8c>;
+		vddpcie1p9-supply = <&wifi_s5a>;
+		vddio-supply = <&wifi_s4a>;
+
+		wlan-enable-gpios = <&tlmm 20 GPIO_ACTIVE_HIGH>;
+		bt-enable-gpios = <&tlmm 21 GPIO_ACTIVE_HIGH>;
+
+		regulators {
+			vreg_pmu_rfa_cmn: ldo0 {
+				regulator-name = "vreg_pmu_rfa_cmn";
+			};
+
+			vreg_pmu_aon_0p59: ldo1 {
+				regulator-name = "vreg_pmu_aon_0p59";
+			};
+
+			vreg_pmu_wlcx_0p8: ldo2 {
+				regulator-name = "vreg_pmu_wlcx_0p8";
+			};
+
+			vreg_pmu_wlmx_0p85: ldo3 {
+				regulator-name = "vreg_pmu_wlmx_0p85";
+			};
+
+			vreg_pmu_btcmx_0p85: ldo4 {
+				regulator-name = "vreg_pmu_btcmx_0p85";
+			};
+
+			vreg_pmu_rfa_0p8: ldo5 {
+				regulator-name = "vreg_pmu_rfa_0p8";
+			};
+
+			vreg_pmu_rfa_1p2: ldo6 {
+				regulator-name = "vreg_pmu_rfa_1p2";
+			};
+
+			vreg_pmu_rfa_1p7: ldo7 {
+				regulator-name = "vreg_pmu_rfa_1p7";
+			};
+
+			vreg_pmu_pcie_0p9: ldo8 {
+				regulator-name = "vreg_pmu_pcie_0p9";
+			};
+
+			vreg_pmu_pcie_1p8: ldo9 {
+				regulator-name = "vreg_pmu_pcie_1p8";
+			};
+		};
+	};
+
+};
+/* Nominal stock requests round up to supported RPMh selectors:
+ * S5A: 1904 mV (8 mV step), S6A: 952 mV (4 mV), S8C: 1352 mV (8 mV).
+ * All remain inside stock regulator bounds. Exact 1900/950/1350 are invalid. */
+&apps_rsc {
+ regulators-usb {
+  wifi_s4a: smps4 { regulator-name = "munch_wifi_s4a"; regulator-min-microvolt = <1800000>; regulator-max-microvolt = <1800000>; };
+  wifi_s5a: smps5 { regulator-name = "munch_wifi_s5a"; regulator-min-microvolt = <1900000>; regulator-max-microvolt = <1904000>; };
+  wifi_s6a: smps6 { regulator-name = "munch_wifi_s6a"; regulator-min-microvolt = <950000>; regulator-max-microvolt = <952000>; };
+  wifi_l9a: ldo9 { regulator-name = "munch_wifi_l9a"; regulator-min-microvolt = <1200000>; regulator-max-microvolt = <1200000>; };
+ };
+ regulators-wifi-c {
+  compatible = "qcom,pm8150l-rpmh-regulators";
+  qcom,pmic-id = "c";
+  wifi_s8c: smps8 { regulator-name = "munch_wifi_s8c"; regulator-min-microvolt = <1350000>; regulator-max-microvolt = <1352000>; };
+ };
+};
+&tlmm {
+ /* Precaution from pinned alioth reference; not established by stock munch DT.
+  * Exclude its secure SPI groups from GPIO enumeration. Hardware validation pending. */
+ gpio-reserved-ranges = <28 4>, <40 4>;
+ bt_en_state: bt-default-state {
+  pins = "gpio21"; function = "gpio"; drive-strength = <16>;
+  output-low; bias-pull-up;
+ };
+ wlan_en_state: wlan-default-state {
+  pins = "gpio20"; function = "gpio"; drive-strength = <16>;
+  output-low; bias-pull-up;
+ };
+};
+&pcie0 { status = "okay"; };
+&pcie0_phy {
+ vdda-phy-supply = <&usb_l5a>;
+ vdda-pll-supply = <&wifi_l9a>;
+ status = "okay";
+};
+&pcieport0 {
+	wifi@0 {
+		compatible = "pci17cb,1101";
+		reg = <0x10000 0x0 0x0 0x0 0x0>;
+
+		vddrfacmn-supply = <&vreg_pmu_rfa_cmn>;
+		vddaon-supply = <&vreg_pmu_aon_0p59>;
+		vddwlcx-supply = <&vreg_pmu_wlcx_0p8>;
+		vddwlmx-supply = <&vreg_pmu_wlmx_0p85>;
+		vddrfa0p8-supply = <&vreg_pmu_rfa_0p8>;
+		vddrfa1p2-supply = <&vreg_pmu_rfa_1p2>;
+		vddrfa1p7-supply = <&vreg_pmu_rfa_1p7>;
+		vddpcie0p9-supply = <&vreg_pmu_pcie_0p9>;
+		vddpcie1p8-supply = <&vreg_pmu_pcie_1p8>;
+	};
+};

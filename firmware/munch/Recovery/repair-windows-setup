@@ -1,0 +1,62 @@
+#!/system/bin/sh
+# BCD system-store repair plus guarded one-sector failed-specialize retry.
+set -eu
+OUTFD="$2";ZIPFILE="$3"
+PATH=/system/bin:/system/xbin:/sbin:/vendor/bin:/tmp:$PATH
+ui(){ echo "ui_print $*" >"/proc/self/fd/$OUTFD";echo ui_print >"/proc/self/fd/$OUTFD"; }
+abort(){ ui "ERROR: $*";exit 1; }
+[ "$(id -u)" = 0 ] || abort 'Root recovery required'
+[ -n "$(getprop ro.twrp.version)" ] || abort 'TWRP required'
+match=0
+for p in ro.product.device ro.product.vendor.device ro.product.system.device ro.build.product; do [ "$(getprop "$p")" != munch ] || match=1;done
+[ "$match" = 1 ] || abort 'Only POCO F4 munch'
+for p in unzip sha256sum dd blockdev readlink wc; do command -v "$p" >/dev/null 2>&1 || abort "Missing $p";done
+ESP=$(readlink -f /dev/block/bootdevice/by-name/esp)
+[ "$ESP" = /dev/block/sda35 ] || abort 'Unexpected ESP node'
+[ "$(blockdev --getss "$ESP")" = 4096 ] && [ "$(blockdev --getsize64 "$ESP")" = 536870912 ] || abort 'Unexpected ESP geometry'
+while read -r source mountpoint options; do
+ resolved=$(readlink -f "$source" 2>/dev/null || true)
+ [ "$resolved" != "$ESP" ] || abort 'Unmount ESP first'
+done </proc/mounts
+actual=$(dd if=/dev/block/sda bs=4096 skip=2 count=2 2>/dev/null | sha256sum);actual=${actual%% *}
+[ "$actual" = '@GPT_SHA@' ] || abort 'Unexpected GPT; no writes performed'
+WIN=$(readlink -f /dev/block/bootdevice/by-name/win)
+[ "$WIN" = /dev/block/sda37 ] || abort 'Unexpected Windows node'
+[ "$(blockdev --getss "$WIN")" = 4096 ] && [ "$(blockdev --getsize64 "$WIN")" = 33806090240 ] || abort 'Unexpected Windows geometry'
+while read -r source rest; do
+ [ "$(readlink -f "$source" 2>/dev/null || true)" != "$WIN" ] || abort 'Unmount Windows first'
+done </proc/mounts
+WORK=/tmp/munch-setup-repair-$$
+mkdir "$WORK" || abort 'Cannot create RAM workspace'
+trap 'rm -rf "$WORK"' EXIT
+ui 'Extracting full ESP image into recovery RAM (512MiB)...'
+unzip -p "$ZIPFILE" payload/esp.img >"$WORK/esp.img" || abort 'Extraction failed'
+[ "$(wc -c <"$WORK/esp.img" | tr -d ' ')" = 536870912 ] || abort 'ESP payload size mismatch'
+actual=$(sha256sum "$WORK/esp.img");actual=${actual%% *}
+[ "$actual" = '@ESP_SHA@' ] || abort 'ESP hash mismatch; no writes performed'
+unzip -p "$ZIPFILE" payload/sector.after >"$WORK/sector.after" || abort 'Sector extraction failed'
+[ "$(wc -c <"$WORK/sector.after" | tr -d ' ')" = 4096 ] || abort 'Sector payload size mismatch'
+actual=$(sha256sum "$WORK/sector.after");actual=${actual%% *}
+[ "$actual" = '@AFTER_SHA@' ] || abort 'Sector payload mismatch'
+actual=$(dd if="$WIN" bs=4096 skip=@SECTOR@ count=1 2>/dev/null | sha256sum);actual=${actual%% *}
+case "$actual" in
+ @BEFORE_SHA@|@AFTER_SHA@) ;;
+ *) abort 'SYSTEM changed since preparation; no writes performed. Prepare ZIP again.' ;;
+esac
+ui 'Writing corrected system-store BCD on ESP...' 
+dd if="$WORK/esp.img" of="$ESP" bs=1048576 conv=notrunc || abort 'ESP write failed'
+sync
+actual=$(dd if="$ESP" bs=1048576 count=512 2>/dev/null | sha256sum);actual=${actual%% *}
+[ "$actual" = '@ESP_SHA@' ] || abort 'ESP full readback mismatch'
+ui 'BCD verified. Retrying failed Specialize state...'
+actual=$(dd if="$WIN" bs=4096 skip=@SECTOR@ count=1 2>/dev/null | sha256sum);actual=${actual%% *}
+case "$actual" in
+ @BEFORE_SHA@) dd if="$WORK/sector.after" of="$WIN" bs=4096 seek=@SECTOR@ count=1 conv=notrunc || abort 'SYSTEM sector write failed';sync ;;
+ @AFTER_SHA@) ;;
+ *) abort 'SYSTEM changed; retry state was not written' ;;
+esac
+actual=$(dd if="$WIN" bs=4096 skip=@SECTOR@ count=1 2>/dev/null | sha256sum);actual=${actual%% *}
+[ "$actual" = '@AFTER_SHA@' ] || abort 'SYSTEM sector readback mismatch'
+ui 'SUCCESS: BCD corrected and Specialize retry prepared.'
+ui 'Fastboot boot the current stable UEFI; unplug the PC cable immediately after transfer.'
+exit 0

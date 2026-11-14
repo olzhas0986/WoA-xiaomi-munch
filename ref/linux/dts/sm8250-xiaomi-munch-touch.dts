@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: BSD-3-Clause
+#include "sm8250-xiaomi-munch-display.dts"
+
+/* Munch stock overlay 21 + Xiaomi focaltech_spi power policy. */
+&apps_rsc {
+ regulators-wifi-c {
+  touch_l1c: ldo1 {
+   regulator-name = "munch_touch_l1c";
+   regulator-min-microvolt = <1800000>;
+   regulator-max-microvolt = <1800000>;
+  };
+  touch_l10c: ldo10 {
+   regulator-name = "munch_touch_l10c";
+   regulator-min-microvolt = <3200000>;
+   regulator-max-microvolt = <3200000>;
+  };
+ };
+};
+&tlmm {
+ touch_active: touch-active-state {
+  pins = "gpio33", "gpio39";
+  function = "gpio";
+  drive-strength = <8>;
+  bias-pull-up;
+ };
+};
+&qup_spi4_cs { drive-strength = <6>; bias-disable; };
+&qup_spi4_data_clk { drive-strength = <6>; bias-disable; };
+&qupv3_id_0 { status = "okay"; };
+&gpi_dma0 { status = "okay"; };
+&spi4 {
+ status = "okay";
+ pinctrl-names = "default";
+ pinctrl-0 = <&qup_spi4_data_clk &qup_spi4_cs>;
+ touchscreen@0 {
+  compatible = "xiaomi,munch-ft3658u";
+  reg = <0>;
+  spi-max-frequency = <6000000>;
+  pinctrl-names = "default";
+  pinctrl-0 = <&touch_active>;
+  interrupt-parent = <&tlmm>;
+  interrupts = <39 IRQ_TYPE_EDGE_FALLING>;
+  reset-gpios = <&tlmm 33 GPIO_ACTIVE_LOW>;
+  vio-supply = <&touch_l1c>;
+  vdd-supply = <&touch_l10c>;
+  /* Xiaomi driver: SUPER_RESOLUTION_FACOTR = 8, not the DT's legacy 10. */
+  touchscreen-size-x = <8640>;
+  touchscreen-size-y = <19200>;
+ };
+};

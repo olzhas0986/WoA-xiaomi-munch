@@ -1,0 +1,51 @@
+#!/system/bin/sh
+# Copy the SCM experiment to a separate ESP folder; never replace EFI or BCD.
+set -eu
+OUTFD="$2"; ZIPFILE="$3"
+PATH=/system/bin:/system/xbin:/sbin:/vendor/bin:/tmp:$PATH
+ui(){ echo "ui_print $*" >"/proc/self/fd/$OUTFD"; echo ui_print >"/proc/self/fd/$OUTFD"; }
+abort(){ ui "ERROR: $*"; exit 1; }
+[ "$(id -u)" = 0 ] || abort 'Root recovery required'
+[ -n "$(getprop ro.twrp.version)" ] || abort 'TWRP required'
+match=0
+for p in ro.product.device ro.product.vendor.device ro.product.system.device ro.build.product; do [ "$(getprop "$p")" != munch ] || match=1; done
+[ "$match" = 1 ] || abort 'Only POCO F4 munch'
+for p in unzip sha256sum dd blockdev readlink mount umount cp; do command -v "$p" >/dev/null 2>&1 || abort "Missing $p"; done
+ESP=$(readlink -f /dev/block/bootdevice/by-name/esp)
+[ "$ESP" = /dev/block/sda35 ] || abort 'Unexpected ESP node'
+[ "$(blockdev --getss "$ESP")" = 4096 ] && [ "$(blockdev --getsize64 "$ESP")" = 536870912 ] || abort 'Unexpected ESP geometry'
+while read -r source mountpoint options; do
+ resolved=$(readlink -f "$source" 2>/dev/null || true)
+ [ "$resolved" != "$ESP" ] || abort 'Unmount ESP first'
+done </proc/mounts
+actual=$(dd if=/dev/block/sda bs=4096 skip=2 count=2 2>/dev/null | sha256sum); actual=${actual%% *}
+[ "$actual" = 'fcd05950e644d334b97e2c0b8be9ed52fc55bcf79d8c251d62c227b47bd75bb6' ] || abort 'Unexpected GPT'
+WORK=/tmp/munch-gpu23-$$
+mkdir "$WORK"; mkdir "$WORK/esp"
+mounted=0
+cleanup(){ if [ "$mounted" = 1 ]; then umount "$WORK/esp" || return; fi; rm -rf "$WORK"; }
+trap cleanup EXIT
+unzip -p "$ZIPFILE" payload/SHA256SUMS >"$WORK/SHA256SUMS"
+actual=$(sha256sum "$WORK/SHA256SUMS"); actual=${actual%% *}
+[ "$actual" = '@SUMS_SHA@' ] || abort 'Invalid package manifest'
+# The hash-pinned manifest contains only fixed, generated relative file names.
+while read -r digest name; do
+ mkdir -p "$WORK/payload/$(dirname "$name")"
+ unzip -p "$ZIPFILE" "payload/$name" >"$WORK/payload/$name" || abort 'Payload extraction failed'
+done <"$WORK/SHA256SUMS"
+(cd "$WORK/payload" && sha256sum -c "$WORK/SHA256SUMS") || abort 'Payload checksum mismatch'
+mount -t vfat -o rw "$ESP" "$WORK/esp" || abort 'Cannot mount ESP'
+mounted=1
+DEST="$WORK/esp/MUNCH/GPU23"
+if [ -e "$DEST" ]; then
+ (cd "$DEST" && sha256sum -c "$WORK/SHA256SUMS") || abort 'Existing GPU23 folder differs; refusing overwrite'
+else
+ mkdir -p "$WORK/esp/MUNCH"
+ cp -R "$WORK/payload" "$DEST" || abort 'Copy failed'
+ (cd "$DEST" && sha256sum -c "$WORK/SHA256SUMS") || abort 'Readback mismatch'
+fi
+sync
+umount "$WORK/esp" || abort 'Cannot unmount ESP'
+mounted=0
+ui 'SUCCESS: SCM package copied to ESP/MUNCH/GPU23.'
+ui 'No Windows driver installed yet. Boot Windows23 and run setup.cmd configure.'

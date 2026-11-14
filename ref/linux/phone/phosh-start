@@ -1,0 +1,87 @@
+#!/bin/sh
+# Run inside the RAM rootfs. BusyBox users can use pmos-enter phosh-start.
+set -eu
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export XDG_RUNTIME_DIR=/run/user/0
+fail() { echo "phosh-start: $*" >&2; exit 1; }
+[ "$(id -u)" = 0 ] || fail 'this bring-up launcher expects root in the RAM rootfs'
+case "${1:-}" in
+ --worker) ;;
+ '')
+  for process in weston phoc phosh; do
+   if pidof "$process" >/dev/null; then fail "$process is already running; stop it first"; fi
+  done
+  for cmd in phoc squeekboard seatd-launch dbus-run-session dbus-daemon dbus-uuidgen udevd udevadm gsettings; do
+   command -v "$cmd" >/dev/null || fail "missing $cmd; see docs/pmos-phosh.md"
+  done
+  [ -x /usr/libexec/phosh ] || fail '/usr/libexec/phosh is missing'
+  [ -x /usr/local/libexec/pmos-munch-phosh-session ] || fail 'install the complete phosh-tools archive'
+  mkdir -p "$XDG_RUNTIME_DIR"
+  chmod 700 "$XDG_RUNTIME_DIR"
+  mkdir "$XDG_RUNTIME_DIR/phosh-start.lock" 2>/dev/null || fail 'launcher already active; see /tmp/phosh.log'
+  self=$(readlink -f "$0")
+  setsid /bin/sh "$self" --worker </dev/null >/tmp/phosh.log 2>&1 &
+  echo 'Phosh scheduled. Connect OTG devices within 10 seconds. Log: /tmp/phosh.log'
+  exit 0
+  ;;
+ *) fail 'usage: phosh-start';;
+esac
+cleanup() { rmdir "$XDG_RUNTIME_DIR/phosh-start.lock" 2>/dev/null || :; }
+trap cleanup 0
+trap 'exit 130' INT
+trap 'exit 143' TERM
+[ -f /.pmos-munch-ready ] || fail 'this is not the loaded pmOS RAM rootfs'
+# The firmware loader resolves this path in the BusyBox PID1 root, not chroot.
+fw=/usr/lib/firmware
+[ -d "$fw/qcom" ] || fw=/lib/firmware
+for name in a650_sqe.fw a650_gmu.bin; do
+ found=0
+ for file in "$fw/qcom/$name" "$fw/qcom/$name.xz" "$fw/qcom/$name.zst" "$fw/$name" "$fw/$name.xz" "$fw/$name.zst"; do
+  [ ! -f "$file" ] || found=1
+ done
+ [ "$found" = 1 ] || fail "missing $name; apk add firmware-qcom-adreno-a650"
+done
+[ -e /dev/dri/renderD128 ] || fail 'GPU render node is missing'
+card=
+for connector in /sys/class/drm/card*-DSI-*; do
+ [ -r "$connector/status" ] || continue
+ [ "$(cat "$connector/status")" = connected ] || continue
+ name=${connector##*/}; card=${name%%-*}; break
+done
+[ -n "$card" ] || fail 'no connected DSI display'
+# Existing bootstrap used ro sysfs; udev trigger and firmware path need writes.
+mount -o remount,rw /sys
+printf '%s\n' "/pmos$fw" > /sys/module/firmware_class/parameters/path
+mkdir -p /dev/shm /run/dbus
+mountpoint -q /dev/shm || mount -t tmpfs -o size=64M,mode=1777 tmpfs /dev/shm
+chmod 1777 /dev/shm
+[ -S /run/udev/control ] || udevd --daemon
+udevadm trigger --action=add --subsystem-match=input
+udevadm trigger --action=add --subsystem-match=drm
+udevadm settle --timeout=15
+dbus-uuidgen --ensure
+[ -S /run/dbus/system_bus_socket ] || dbus-daemon --system --fork
+cat > "$XDG_RUNTIME_DIR/phoc.ini" <<'CONFIG'
+[output:DSI-1]
+scale = 3
+CONFIG
+unset DISPLAY WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE
+export WLR_BACKENDS=drm,libinput
+export WLR_DRM_DEVICES="/dev/dri/$card"
+export WLR_RENDERER=gles2
+export WLR_RENDER_DRM_DEVICE=/dev/dri/renderD128
+export SEATD_VTBOUND=0 LIBSEAT_BACKEND=seatd
+export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=Phosh XDG_SESSION_DESKTOP=phosh
+# Force the on-device layout and use our explicitly provisional camera guard.
+export G_RESOURCE_OVERLAYS=/mobi/phosh/gmobile/devices/display-panels=/usr/local/share/pmos-munch/display-panels
+# Never retain the temporary 1.25 calibration after loading the corrected DT.
+axis=/sys/firmware/devicetree/base/soc@0/geniqup@9c0000/spi@990000/touchscreen@0/touchscreen-size-x
+rule=/etc/udev/rules.d/99-munch-touch-calibration.rules
+if [ -f "$rule" ] && [ -r "$axis" ]; then
+ bytes=$(od -An -tx1 "$axis" | tr -d ' \n')
+ [ "$bytes" != 000021c0 ] || fail 'remove 99-munch-touch-calibration.rules: corrected DT already uses factor 8'
+fi
+echo 'Connect OTG devices now. Waiting 10 seconds...'
+sleep 10
+seatd-launch dbus-run-session -- phoc -v -C "$XDG_RUNTIME_DIR/phoc.ini" \
+ -E /usr/local/libexec/pmos-munch-phosh-session

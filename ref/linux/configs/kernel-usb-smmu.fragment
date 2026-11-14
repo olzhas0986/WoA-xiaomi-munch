@@ -1,0 +1,22 @@
+# Preflight G: preserve interconnect baseline; add ARM SMMU with QCOM support.
+CONFIG_PM_OPP=y
+CONFIG_QCOM_IPCC=y
+CONFIG_COMMON_CLK_QCOM=y
+CONFIG_QCOM_CLK_RPMH=y
+CONFIG_SM_GCC_8250=y
+# Selected by GCC; require its domain helper explicitly for verification.
+CONFIG_QCOM_GDSC=y
+CONFIG_QCOM_PDC=y
+CONFIG_INTERCONNECT_QCOM=y
+CONFIG_INTERCONNECT_QCOM_SM8250=y
+# Selected helpers: verify them explicitly.
+CONFIG_INTERCONNECT_QCOM_RPMH=y
+CONFIG_INTERCONNECT_QCOM_BCM_VOTER=y
+CONFIG_IOMMU_SUPPORT=y
+CONFIG_ARM_SMMU=y
+CONFIG_ARM_SMMU_QCOM=y
+# Keep translated DMA and the upstream unmatched-stream policy explicit.
+CONFIG_IOMMU_DEFAULT_DMA_STRICT=y
+CONFIG_ARM_SMMU_DISABLE_BYPASS_BY_DEFAULT=y
+# Mainline defaults this to y: disable next-page prefetch for MMU-500 errata.
+CONFIG_ARM_SMMU_MMU_500_CPRE_ERRATA=y

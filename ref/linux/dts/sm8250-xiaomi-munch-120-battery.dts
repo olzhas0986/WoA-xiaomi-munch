@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: BSD-3-Clause
+#include "sm8250-xiaomi-munch-touch.dts"
+
+/* Stock munch overlay 21: fixed 120 Hz L11R command/timing profile. */
+&{/soc@0/display-subsystem@ae00000/dsi@ae94000/panel@0} {
+ xiaomi,refresh-rate = <120>;
+};
+
+/* Stock /soc/i2c@888000: BQ27Z561 at 0x55, QUP16 GPIO48/49.
+ * Keep the gauge's programmed battery data; no calibration or charger writes.
+ */
+&qupv3_id_2 { status = "okay"; };
+&gpi_dma2 { status = "okay"; };
+&i2c16 {
+ status = "okay";
+ clock-frequency = <100000>;
+ battery@55 {
+  compatible = "ti,bq27z561";
+  reg = <0x55>;
+ };
+};

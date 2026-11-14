@@ -1,0 +1,5 @@
+# Diagnostic overlay only; no changes to firmware, power sequencing or RX mode.
+CONFIG_CFG80211_DEBUGFS=y
+CONFIG_MAC80211_DEBUGFS=y
+CONFIG_ATH11K_DEBUG=y
+CONFIG_ATH11K_DEBUGFS=y

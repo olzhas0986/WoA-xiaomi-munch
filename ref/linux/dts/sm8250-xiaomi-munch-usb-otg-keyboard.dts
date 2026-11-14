@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: BSD-3-Clause
+#include "sm8250-xiaomi-munch-usb-udc.dts"
+#include "pm8150b.dtsi"
+#include <dt-bindings/usb/pd.h>
+
+/* Stock munch: PM8150B USID 2, PD PHY supplied by L2A.
+ * TEMPORARY: retain firmware's GPIO46 VBUS gate state (stock default low).
+ * No guessed GPIO toggles; external gate behavior needs hardware validation.
+ */
+&pm8150b_typec {
+ vdd-pdphy-supply = <&usb_l2a>;
+ status = "okay";
+ connector {
+  compatible = "usb-c-connector";
+  power-role = "dual";
+  data-role = "dual";
+  try-power-role = "sink";
+  self-powered;
+  op-sink-microwatt = <2500000>;
+  vbus-supply = <&pm8150b_vbus>;
+  source-pdos = <PDO_FIXED(5000, 500, PDO_FIXED_DUAL_ROLE | PDO_FIXED_USB_COMM | PDO_FIXED_DATA_SWAP)>;
+  sink-pdos = <PDO_FIXED(5000, 500, PDO_FIXED_DUAL_ROLE | PDO_FIXED_USB_COMM | PDO_FIXED_DATA_SWAP)>;
+  ports {
+   #address-cells = <1>;
+   #size-cells = <0>;
+   port@0 {
+    reg = <0>;
+    munch_typec_hs: endpoint { remote-endpoint = <&usb_1_dwc3_hs_out>; };
+   };
+  };
+ };
+};
+&pm8150b_vbus {
+ regulator-min-microamp = <500000>;
+ regulator-max-microamp = <500000>;
+ status = "okay";
+};
+&usb_1_dwc3 {
+ dr_mode = "otg";
+ usb-role-switch;
+};
+&usb_1_dwc3_hs_out { remote-endpoint = <&munch_typec_hs>; };

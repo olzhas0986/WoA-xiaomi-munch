@@ -1,0 +1,3 @@
+# Preflight B: preserve the confirmed OPP dependency; add IPCC alone.
+CONFIG_PM_OPP=y
+CONFIG_QCOM_IPCC=y

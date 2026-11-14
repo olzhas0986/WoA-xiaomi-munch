@@ -1,0 +1,85 @@
+From: pmos-munch bring-up <bringup@localhost>
+Subject: [PATCH] debug: trace cacheinfo CPU hotplug callback progress
+
+Diagnostic only, isolated from normal build profiles. The GCC trace boot's last
+visible initcall was cacheinfo_sysfs_init. Print lock/dispatch progress for that
+state only, and per-CPU callback stages. Preserve all existing operations,
+locks, errors and CPU/domain topology. Extra printk can change timing.
+
+--- a/drivers/base/cacheinfo.c
++++ b/drivers/base/cacheinfo.c
+@@ -1032,18 +1032,26 @@
+ 
+ static int cacheinfo_cpu_online(unsigned int cpu)
+ {
+-	int rc = detect_cache_attributes(cpu);
++	int rc;
+ 	cpumask_t *cpu_map;
+ 
++	/* Diagnostic only: retain the original operations and return paths. */
++	pr_info("CI cpu=%u enter\n", cpu);
++	rc = detect_cache_attributes(cpu);
++	pr_info("CI cpu=%u attr ret=%d\n", cpu, rc);
+ 	if (rc)
+ 		return rc;
+ 	rc = cache_add_dev(cpu);
++	pr_info("CI cpu=%u sysfs ret=%d\n", cpu, rc);
+ 	if (rc)
+ 		goto err;
+ 	if (cpu_map_shared_cache(true, cpu, &cpu_map)) {
++		pr_info("CI cpu=%u shared\n", cpu);
+ 		update_per_cpu_data_slice_size(true, cpu, cpu_map);
++		pr_info("CI cpu=%u pcp\n", cpu);
+ 		sched_update_llc_bytes(cpu_map);
+ 	}
++	pr_info("CI cpu=%u exit\n", cpu);
+ 	return 0;
+ err:
+ 	free_cache_attributes(cpu);
+@@ -1070,6 +1078,7 @@
+ 
+ static int __init cacheinfo_sysfs_init(void)
+ {
++	pr_info("CI init\n");
+ 	return cpuhp_setup_state(CPUHP_AP_BASE_CACHEINFO_ONLINE,
+ 				 "base/cacheinfo:online",
+ 				 cacheinfo_cpu_online, cacheinfo_cpu_pre_down);
+--- a/kernel/cpu.c
++++ b/kernel/cpu.c
+@@ -2479,7 +2479,12 @@
+ 	if (cpuhp_cb_check(state) || !name)
+ 		return -EINVAL;
+ 
++	/* Diagnostic only: the cacheinfo state is the observed stalled initcall. */
++	if (state == CPUHP_AP_BASE_CACHEINFO_ONLINE)
++		pr_info("CI state-lock\n");
+ 	mutex_lock(&cpuhp_state_mutex);
++	if (state == CPUHP_AP_BASE_CACHEINFO_ONLINE)
++		pr_info("CI state-locked\n");
+ 
+ 	ret = cpuhp_store_callbacks(state, name, startup, teardown,
+ 				    multi_instance);
+@@ -2504,7 +2509,11 @@
+ 		if (cpustate < state)
+ 			continue;
+ 
++		if (state == CPUHP_AP_BASE_CACHEINFO_ONLINE)
++			pr_info("CI cpu=%d call\n", cpu);
+ 		ret = cpuhp_issue_call(cpu, state, true, NULL);
++		if (state == CPUHP_AP_BASE_CACHEINFO_ONLINE)
++			pr_info("CI cpu=%d done ret=%d\n", cpu, ret);
+ 		if (ret) {
+ 			if (teardown)
+ 				cpuhp_rollback_install(cpu, state, NULL);
+@@ -2532,7 +2541,11 @@
+ {
+ 	int ret;
+ 
++	if (state == CPUHP_AP_BASE_CACHEINFO_ONLINE)
++		pr_info("CI read-lock\n");
+ 	cpus_read_lock();
++	if (state == CPUHP_AP_BASE_CACHEINFO_ONLINE)
++		pr_info("CI read-locked\n");
+ 	ret = __cpuhp_setup_state_cpuslocked(state, name, invoke, startup,
+ 					     teardown, multi_instance);
+ 	cpus_read_unlock();

@@ -1,0 +1,59 @@
+#!/system/bin/sh
+# POCO F4 munch: install WinPE test volumes into the two new partitions.
+set -eu
+OUTFD="$2"
+ZIPFILE="$3"
+PATH=/system/bin:/system/xbin:/sbin:/vendor/bin:/tmp:$PATH
+ui() { echo "ui_print $*" >"/proc/self/fd/$OUTFD"; echo ui_print >"/proc/self/fd/$OUTFD"; }
+abort() { ui "ERROR: $*"; exit 1; }
+[ "$(id -u)" = 0 ] || abort 'Root recovery required'
+[ -n "$(getprop ro.twrp.version)" ] || abort 'TWRP recovery required'
+match=0
+for property in ro.product.device ro.product.vendor.device ro.product.system.device ro.build.product; do
+ [ "$(getprop "$property")" != munch ] || match=1
+done
+[ "$match" = 1 ] || abort 'This archive is only for POCO F4 munch'
+for tool in unzip sha256sum dd blockdev readlink wc; do
+ command -v "$tool" >/dev/null 2>&1 || abort "Missing tool: $tool"
+done
+ESP=$(readlink -f /dev/block/bootdevice/by-name/esp)
+WIN=$(readlink -f /dev/block/bootdevice/by-name/win)
+[ "$ESP" = /dev/block/sda35 ] || abort 'Unexpected esp device'
+[ "$WIN" = /dev/block/sda37 ] || abort 'Unexpected win device'
+[ "$(blockdev --getss "$ESP")" = 4096 ] || abort 'Expected 4Kn ESP'
+[ "$(blockdev --getss "$WIN")" = 4096 ] || abort 'Expected 4Kn win'
+[ "$(blockdev --getsize64 "$ESP")" = 536870912 ] || abort 'ESP must be exactly 512MiB'
+[ "$(blockdev --getsize64 "$WIN")" = 33806090240 ] || abort 'win size differs from the verified 32GiB layout'
+while read -r source mountpoint options; do
+ resolved=$(readlink -f "$source" 2>/dev/null || true)
+ [ "$resolved" != "$ESP" ] && [ "$resolved" != "$WIN" ] || abort 'Unmount esp and win before installing'
+done </proc/mounts
+WORK=/tmp/munch-winpe-$$
+mkdir "$WORK" || abort 'Cannot create recovery RAM directory'
+trap 'rm -rf "$WORK"' EXIT
+ui 'MUNCH WinPE test files installer'
+ui 'Preparing FAT32 test images in recovery RAM...'
+unzip -p "$ZIPFILE" payload/esp.img >"$WORK/esp.img" || abort 'ESP extraction failed'
+unzip -p "$ZIPFILE" payload/win.img >"$WORK/win.img" || abort 'WinPE extraction failed'
+unzip -p "$ZIPFILE" payload/SHA256SUMS >"$WORK/SHA256SUMS" || abort 'Manifest extraction failed'
+[ "$(wc -c <"$WORK/esp.img" | tr -d ' ')" = 536870912 ] || abort 'ESP payload size mismatch'
+[ "$(wc -c <"$WORK/win.img" | tr -d ' ')" = 671088640 ] || abort 'WinPE payload size mismatch'
+(cd "$WORK" && sha256sum -c SHA256SUMS) || abort 'Image checksum mismatch; no partitions written'
+ui 'Image checksums verified. Writing WinPE test volume...'
+dd if="$WORK/win.img" of="$WIN" bs=1048576 conv=notrunc || abort 'WinPE write failed'
+sync
+ui 'Reading win back for verification...'
+expected=$(sha256sum "$WORK/win.img"); expected=${expected%% *}
+actual=$(dd if="$WIN" bs=1048576 count=640 2>/dev/null | sha256sum); actual=${actual%% *}
+[ "$actual" = "$expected" ] || abort 'WinPE readback mismatch'
+ui 'Writing EFI System Partition...'
+dd if="$WORK/esp.img" of="$ESP" bs=1048576 conv=notrunc || abort 'ESP write failed'
+sync
+ui 'Reading esp back for verification...'
+expected=$(sha256sum "$WORK/esp.img"); expected=${expected%% *}
+actual=$(dd if="$ESP" bs=1048576 count=512 2>/dev/null | sha256sum); actual=${actual%% *}
+[ "$actual" = "$expected" ] || abort 'ESP readback mismatch'
+ui 'SUCCESS: both test volumes written and verified'
+ui 'win temporarily contains a 640MiB WinPE FAT volume, not installed Windows'
+ui 'UEFI boot is a separate step. Android boot partitions were not flashed'
+exit 0

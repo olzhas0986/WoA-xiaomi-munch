@@ -1,0 +1,64 @@
+#!/system/bin/sh
+# Generated manifest pins chunks; only verified esp/win nodes are writable.
+set -eu
+OUTFD="$2"; ZIPFILE="$3"
+PATH=/system/bin:/system/xbin:/sbin:/vendor/bin:/tmp:$PATH
+ui(){ echo "ui_print $*" >"/proc/self/fd/$OUTFD"; echo ui_print >"/proc/self/fd/$OUTFD"; }
+abort(){ ui "ERROR: $*"; exit 1; }
+[ "$(id -u)" = 0 ] || abort 'Root recovery required'
+[ -n "$(getprop ro.twrp.version)" ] || abort 'TWRP required'
+match=0
+for property in ro.product.device ro.product.vendor.device ro.product.system.device ro.build.product; do
+ [ "$(getprop "$property")" != munch ] || match=1
+done
+[ "$match" = 1 ] || abort 'Only POCO F4 munch is supported'
+for tool in unzip sha256sum dd blockdev readlink wc; do command -v "$tool" >/dev/null 2>&1 || abort "Missing $tool"; done
+ESP=$(readlink -f /dev/block/bootdevice/by-name/esp)
+WIN=$(readlink -f /dev/block/bootdevice/by-name/win)
+[ "$ESP" = /dev/block/sda35 ] && [ "$WIN" = /dev/block/sda37 ] || abort 'Unexpected partition nodes'
+[ "$(blockdev --getss "$ESP")" = 4096 ] && [ "$(blockdev --getss "$WIN")" = 4096 ] || abort 'Expected 4Kn media'
+[ "$(blockdev --getsize64 "$ESP")" = 536870912 ] && [ "$(blockdev --getsize64 "$WIN")" = 33806090240 ] || abort 'Unexpected partition sizes'
+while read -r source mountpoint options; do
+ resolved=$(readlink -f "$source" 2>/dev/null || true)
+ [ "$resolved" != "$ESP" ] && [ "$resolved" != "$WIN" ] || abort 'Unmount esp and win first'
+done </proc/mounts
+# Refuse a different partition layout before any filesystem write.
+actual=$(dd if=/dev/block/sda bs=4096 skip=2 count=2 2>/dev/null | sha256sum); actual=${actual%% *}
+[ "$actual" = '@GPT_SHA@' ] || abort 'GPT entries differ from the verified layout; no writes performed'
+WORK=/tmp/munch-full-windows-$$
+mkdir "$WORK" || abort 'Cannot create RAM workspace'
+trap 'rm -rf "$WORK"' EXIT
+unzip -p "$ZIPFILE" payload/PARTS >"$WORK/PARTS" || abort 'Missing manifest'
+actual=$(sha256sum "$WORK/PARTS"); actual=${actual%% *}
+[ "$actual" = '@MANIFEST_SHA@' ] || abort 'Manifest hash mismatch'
+ui 'Windows 11 IoT LTSC ARM64: verifying all payloads before writing'
+number=0
+while read -r part name offset count expected; do
+ case "$part" in win) limit=8253440;; esp) limit=131072;; *) abort 'Invalid target';; esac
+ case "$name" in payload/win-[0-9][0-9][0-9][0-9].bin|payload/esp-[0-9][0-9][0-9][0-9].bin) ;; *) abort 'Invalid payload name';; esac
+ case "$offset:$count" in *[!0-9:]*|:*|*:) abort 'Invalid chunk range';; esac
+ [ "$count" -gt 0 ] && [ "$count" -le 16384 ] && [ "$offset" -ge 0 ] && [ "$offset" -le "$limit" ] && [ "$count" -le "$((limit-offset))" ] || abort 'Chunk outside partition'
+ actual=$(unzip -p "$ZIPFILE" "$name" | sha256sum); actual=${actual%% *}
+ [ "$actual" = "$expected" ] || abort "Payload hash mismatch: $name"
+ number=$((number+1))
+done <"$WORK/PARTS"
+[ "$number" = '@CHUNKS@' ] || abort 'Incomplete manifest'
+ui 'All payloads verified. Reinstalling Windows in esp/win.'
+number=0
+while read -r part name offset count expected; do
+ case "$part" in win) target="$WIN";; esp) target="$ESP";; *) abort 'Invalid target';; esac
+ unzip -p "$ZIPFILE" "$name" >"$WORK/chunk" || abort 'Chunk extraction failed'
+ [ "$(wc -c <"$WORK/chunk" | tr -d ' ')" = "$((count*4096))" ] || abort 'Chunk size mismatch'
+ actual=$(sha256sum "$WORK/chunk"); actual=${actual%% *}
+ [ "$actual" = "$expected" ] || abort 'Chunk changed after initial verification'
+ dd if="$WORK/chunk" of="$target" bs=4096 seek="$offset" conv=notrunc || abort 'Write failed'
+ sync
+ actual=$(dd if="$target" bs=4096 skip="$offset" count="$count" 2>/dev/null | sha256sum); actual=${actual%% *}
+ [ "$actual" = "$expected" ] || abort 'Readback mismatch'
+ rm "$WORK/chunk"
+ number=$((number+1))
+ ui "Verified chunk $number / @CHUNKS@"
+done <"$WORK/PARTS"
+ui 'SUCCESS: Windows NTFS and EFI boot files installed and verified'
+ui 'Only esp/win were written. Fastboot boot the stable UEFI and unplug PC after transfer.'
+exit 0

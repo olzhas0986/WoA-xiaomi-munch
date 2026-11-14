@@ -1,0 +1,7 @@
+#!/bin/sh
+# Local/USB recovery console retained for this bring-up image, like its baseline.
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root TERM=linux PS1='pmos-native# '
+echo 'Native pmOS recovery console (root). Services: rc-status'
+echo 'Connect Wi-Fi: nmtui connect; collect logs: pmos-diagnose --kmsg'
+exec /bin/sh -i

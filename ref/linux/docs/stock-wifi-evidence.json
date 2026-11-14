@@ -1,0 +1,16 @@
+{
+  "source": "out/stock-dt/munch-v21.dtb",
+  "wifi_compatible": "qcom,cnss-qca6390",
+  "wlan_gpio_raw": "65 14 0",
+  "bt_gpio_raw": "65 15 0",
+  "supplies": {
+    "vdd-wlan-aon-supply": "a9",
+    "vdd-wlan-dig-supply": "a9",
+    "vdd-wlan-io-supply": "ab",
+    "vdd-wlan-rfa1-supply": "ac",
+    "vdd-wlan-rfa2-supply": "ad"
+  },
+  "pcie_perst": "65 4f 0",
+  "pcie_wake": "65 51 0",
+  "status": "offline evidence only; see pmos-wifi.md for resolved resources and hardware uncertainties"
+}

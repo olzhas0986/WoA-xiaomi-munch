@@ -1,0 +1,9 @@
+# F3-style driver lifecycle; keep munch board configuration and firmware.
+CONFIG_MODULES=y
+CONFIG_MODULE_UNLOAD=y
+CONFIG_LOCALVERSION="-pmos-munch-modular"
+CONFIG_CFG80211=m
+CONFIG_MAC80211=m
+CONFIG_ATH11K=m
+CONFIG_ATH11K_PCI=m
+CONFIG_PCI_PWRCTRL_PWRSEQ=m

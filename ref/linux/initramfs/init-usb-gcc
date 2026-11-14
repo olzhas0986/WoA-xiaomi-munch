@@ -1,0 +1,41 @@
+#!/bin/busybox sh
+export PATH=/bin:/sbin
+/bin/busybox --install -s /bin
+exec 0</dev/console 1>/dev/console 2>&1
+fatal() { echo "D FAIL: $*"; exec sh; }
+mount -t devtmpfs devtmpfs /dev || fatal DEV
+mount -t proc proc /proc || fatal PROC
+mount -t sysfs sysfs /sys || fatal SYS
+# Full logs stay in RAM. The screen needs only a few transcribable fields.
+echo 'init: userspace alive: USB preflight D' > /dev/kmsg
+bound() {
+ for device in /sys/bus/platform/drivers/"$1"/*; do
+  if [ -d "$device" ] && [ -e "$device/of_node" ]; then
+   echo 1
+   return
+  fi
+ done
+ echo 0
+}
+cpu=$(grep -c '^processor' /proc/cpuinfo)
+rpmh=$(bound qcom-rpmhpd)
+ipcc=$(bound qcom-ipcc)
+aoss=$(bound qcom_aoss_qmp)
+rpmhcc=$(bound clk-rpmh)
+gcc=$(bound gcc-sm8250)
+dmesg > /run/dmesg.boot || fatal DMESG
+if [ "$rpmhcc" = 0 ] || [ "$gcc" = 0 ]; then
+ echo 'Clock diagnostics (last 5 matching messages):'
+ dmesg | grep -iE 'clk-rpmh|gcc-sm8250|clock-controller|missing RPMh|RPMh aux|register.*clock|defer' | tail -n 5
+fi
+# No terminal clear: preserve preceding errors. No delayed scrolling or paging.
+printf '\n=== USB PREFLIGHT D ===\n'
+printf 'D CPU=%s RPMH=%s IPCC=%s AOSS=%s CLK=%s GCC=%s\n' \
+ "$cpu" "$rpmh" "$ipcc" "$aoss" "$rpmhcc" "$gcc"
+echo 'Expected: CPU=8 RPMH=1 IPCC=1 AOSS=1 CLK=1 GCC=1'
+echo 'Copy the D line. Full log: /run/dmesg.boot'
+while true; do
+ setsid cttyhack sh
+ echo 'D: shell exited; restarting'
+ sleep 1
+done

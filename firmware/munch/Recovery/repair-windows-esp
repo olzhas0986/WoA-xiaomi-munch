@@ -1,0 +1,38 @@
+#!/system/bin/sh
+# Full ESP byte-for-byte rewrite, leaving the NTFS Windows volume untouched.
+set -eu
+OUTFD="$2";ZIPFILE="$3"
+PATH=/system/bin:/system/xbin:/sbin:/vendor/bin:/tmp:$PATH
+ui(){ echo "ui_print $*" >"/proc/self/fd/$OUTFD";echo ui_print >"/proc/self/fd/$OUTFD"; }
+abort(){ ui "ERROR: $*";exit 1; }
+[ "$(id -u)" = 0 ] || abort 'Root recovery required'
+[ -n "$(getprop ro.twrp.version)" ] || abort 'TWRP required'
+match=0
+for p in ro.product.device ro.product.vendor.device ro.product.system.device ro.build.product; do [ "$(getprop "$p")" != munch ] || match=1;done
+[ "$match" = 1 ] || abort 'Only POCO F4 munch'
+for p in unzip sha256sum dd blockdev readlink wc; do command -v "$p" >/dev/null 2>&1 || abort "Missing $p";done
+ESP=$(readlink -f /dev/block/bootdevice/by-name/esp)
+[ "$ESP" = /dev/block/sda35 ] || abort 'Unexpected ESP node'
+[ "$(blockdev --getss "$ESP")" = 4096 ] && [ "$(blockdev --getsize64 "$ESP")" = 536870912 ] || abort 'Unexpected ESP geometry'
+while read -r source mountpoint options; do
+ resolved=$(readlink -f "$source" 2>/dev/null || true)
+ [ "$resolved" != "$ESP" ] || abort 'Unmount ESP first'
+done </proc/mounts
+actual=$(dd if=/dev/block/sda bs=4096 skip=2 count=2 2>/dev/null | sha256sum);actual=${actual%% *}
+[ "$actual" = '@GPT_SHA@' ] || abort 'Unexpected GPT; no writes performed'
+WORK=/tmp/munch-esp-repair-$$
+mkdir "$WORK" || abort 'Cannot create RAM workspace'
+trap 'rm -rf "$WORK"' EXIT
+ui 'Extracting full ESP image into recovery RAM (512MiB)...'
+unzip -p "$ZIPFILE" payload/esp.img >"$WORK/esp.img" || abort 'Extraction failed'
+[ "$(wc -c <"$WORK/esp.img" | tr -d ' ')" = 536870912 ] || abort 'ESP payload size mismatch'
+actual=$(sha256sum "$WORK/esp.img");actual=${actual%% *}
+[ "$actual" = '@ESP_SHA@' ] || abort 'ESP hash mismatch; no writes performed'
+ui 'Writing the entire ESP including all zero sectors...'
+dd if="$WORK/esp.img" of="$ESP" bs=1048576 conv=notrunc || abort 'ESP write failed'
+sync
+actual=$(dd if="$ESP" bs=1048576 count=512 2>/dev/null | sha256sum);actual=${actual%% *}
+[ "$actual" = '@ESP_SHA@' ] || abort 'ESP full readback mismatch'
+ui 'SUCCESS: full ESP written and verified. Windows NTFS was not changed.'
+ui 'Fastboot boot the current stable UEFI; unplug the PC cable immediately after transfer.'
+exit 0

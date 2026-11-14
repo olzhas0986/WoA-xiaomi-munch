@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: BSD-3-Clause
+#include "sm8250-xiaomi-munch-usb-rails.dts"
+
+/* Only primary USB2 PHY; keep QMP/USB3 and DWC3 disabled.
+ * Inherited clock/reset/register binding is SM8250 mainline. Stock munch's
+ * vdd-supply corresponds to mainline's vdda-pll-supply (see stock evidence).
+ * No vendor raw tuning sequence or new USB quirk is introduced.
+ */
+&usb_1_hsphy {
+ vdda-pll-supply = <&usb_l5a>;
+ vdda18-supply = <&usb_l12a>;
+ vdda33-supply = <&usb_l2a>;
+ status = "okay";
+};

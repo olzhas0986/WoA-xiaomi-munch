@@ -1,0 +1,18 @@
+# Generated builds, root filesystems, logs and local backups.
+/out/
+__pycache__/
+*.py[cod]
+
+# Local tools and credentials.
+/.agents/
+/.codex/
+/.aws/
+
+# Firmware inputs and phone captures stay outside version control.
+/*.img
+/*.zip
+/*.tar.*
+/*.jpg
+/*.png
+/cmdline.txt
+*:Zone.Identifier

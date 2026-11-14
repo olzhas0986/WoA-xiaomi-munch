@@ -1,0 +1,71 @@
+#!/bin/busybox sh
+export PATH=/bin:/sbin
+/bin/busybox --install -s /bin
+exec 0</dev/console 1>/dev/console 2>&1
+fatal() { echo "G FAIL: $*"; exec sh; }
+mount -t devtmpfs devtmpfs /dev || fatal DEV
+mount -t proc proc /proc || fatal PROC
+mount -t sysfs sysfs /sys || fatal SYS
+# Full logs stay in RAM. The screen needs only a few transcribable fields.
+echo 'init: userspace alive: USB preflight G' > /dev/kmsg
+bound() {
+ for device in /sys/bus/platform/drivers/"$1"/*; do
+  if [ -d "$device" ] && [ -e "$device/of_node" ]; then
+   echo 1
+   return
+  fi
+ done
+ echo 0
+}
+cpu=$(grep -c '^processor' /proc/cpuinfo)
+rpmh=$(bound qcom-rpmhpd)
+ipcc=$(bound qcom-ipcc)
+aoss=$(bound qcom_aoss_qmp)
+rpmhcc=$(bound clk-rpmh)
+gcc=$(bound gcc-sm8250)
+pdc=$(bound qcom_pdc)
+bcm=$(bound bcm_voter)
+smmu=0
+if [ -e /sys/bus/platform/drivers/arm-smmu/15000000.iommu/of_node ]; then
+ smmu=1
+else
+ echo 'SMMU diagnostics (last 5 matching messages):'
+ dmesg | grep -iE 'smmu|iommu|15000000|defer' | tail -n 5
+fi
+# USB path endpoints from the inherited sm8250.dtsi. Check each actual binding.
+endpoint() {
+ if [ -e "/sys/bus/platform/drivers/qnoc-sm8250/$1.interconnect/of_node" ]; then
+  echo 1
+ else
+  echo 0
+ fi
+}
+a1=$(endpoint 16e0000)
+mc=$(endpoint 163d000)
+gem=$(endpoint 9100000)
+cn=$(endpoint 1500000)
+if [ "$bcm$a1$mc$gem$cn" != 11111 ]; then
+ echo 'Interconnect diagnostics (last 5 matching messages):'
+ dmesg | grep -iE 'interconnect|bcm|qnoc|defer' | tail -n 5
+fi
+if [ "$pdc" = 0 ]; then
+ echo "PDC diagnostics (last 5 matching messages):"
+ dmesg | grep -iE "pdc|b220000|defer" | tail -n 5
+fi
+dmesg > /run/dmesg.boot || fatal DMESG
+if [ "$rpmhcc" = 0 ] || [ "$gcc" = 0 ]; then
+ echo 'Clock diagnostics (last 5 matching messages):'
+ dmesg | grep -iE 'clk-rpmh|gcc-sm8250|clock-controller|missing RPMh|RPMh aux|register.*clock|defer' | tail -n 5
+fi
+# No terminal clear: preserve preceding errors. No delayed scrolling or paging.
+printf '\n=== USB PREFLIGHT G ===\n'
+printf 'G CPU=%s RPMH=%s IPCC=%s AOSS=%s CLK=%s GCC=%s PDC=%s\n' \
+ "$cpu" "$rpmh" "$ipcc" "$aoss" "$rpmhcc" "$gcc" "$pdc"
+printf 'G BCM=%s A1=%s MC=%s GEM=%s CN=%s SMMU=%s\n' "$bcm" "$a1" "$mc" "$gem" "$cn" "$smmu"
+echo 'Expected: CPU=8 and all provider fields=1'
+echo 'Copy both G lines. Full log: /run/dmesg.boot'
+while true; do
+ setsid cttyhack sh
+ echo 'G: shell exited; restarting'
+ sleep 1
+done

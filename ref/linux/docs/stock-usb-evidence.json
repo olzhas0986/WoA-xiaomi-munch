@@ -1,0 +1,104 @@
+{
+  "inputs": {
+    "vendor_boot.img": "55a9f6c6fd4b77b0a05f05f4493d0ef0a4b33eae781cb743fcb0578af5511717",
+    "dtbo.img": "666417fdf89b669791014958179294a214796163af6af0c27a9ed43ecb73f15a"
+  },
+  "selected_overlay": "overlay-21.dtbo",
+  "overlay_board_id": "32 0",
+  "bases": [
+    {
+      "base": "base-0.dtb",
+      "msm_id": "164 20001",
+      "phy": "/soc/hsphy@88e3000",
+      "supplies": [
+        {
+          "property": "vdd-supply",
+          "node": "/soc/rsc@18200000/rpmh-regulator-ldoa5/regulator-pm8150-l5",
+          "name": "pm8150_l5",
+          "resource": "ldoa5",
+          "min_uv": 880000,
+          "max_uv": 880000
+        },
+        {
+          "property": "vdda18-supply",
+          "node": "/soc/rsc@18200000/rpmh-regulator-ldoa12/regulator-pm8150-l12",
+          "name": "pm8150_l12",
+          "resource": "ldoa12",
+          "min_uv": 1800000,
+          "max_uv": 1800000
+        },
+        {
+          "property": "vdda33-supply",
+          "node": "/soc/rsc@18200000/rpmh-regulator-ldoa2/regulator-pm8150-l2",
+          "name": "pm8150_l2",
+          "resource": "ldoa2",
+          "min_uv": 3072000,
+          "max_uv": 3072000
+        }
+      ]
+    },
+    {
+      "base": "base-1.dtb",
+      "msm_id": "164 20000",
+      "phy": "/soc/hsphy@88e3000",
+      "supplies": [
+        {
+          "property": "vdd-supply",
+          "node": "/soc/rsc@18200000/rpmh-regulator-ldoa5/regulator-pm8150-l5",
+          "name": "pm8150_l5",
+          "resource": "ldoa5",
+          "min_uv": 880000,
+          "max_uv": 880000
+        },
+        {
+          "property": "vdda18-supply",
+          "node": "/soc/rsc@18200000/rpmh-regulator-ldoa12/regulator-pm8150-l12",
+          "name": "pm8150_l12",
+          "resource": "ldoa12",
+          "min_uv": 1800000,
+          "max_uv": 1800000
+        },
+        {
+          "property": "vdda33-supply",
+          "node": "/soc/rsc@18200000/rpmh-regulator-ldoa2/regulator-pm8150-l2",
+          "name": "pm8150_l2",
+          "resource": "ldoa2",
+          "min_uv": 3072000,
+          "max_uv": 3072000
+        }
+      ]
+    },
+    {
+      "base": "base-2.dtb",
+      "msm_id": "164 10000",
+      "phy": "/soc/hsphy@88e3000",
+      "supplies": [
+        {
+          "property": "vdd-supply",
+          "node": "/soc/rsc@18200000/rpmh-regulator-ldoa5/regulator-pm8150-l5",
+          "name": "pm8150_l5",
+          "resource": "ldoa5",
+          "min_uv": 880000,
+          "max_uv": 880000
+        },
+        {
+          "property": "vdda18-supply",
+          "node": "/soc/rsc@18200000/rpmh-regulator-ldoa12/regulator-pm8150-l12",
+          "name": "pm8150_l12",
+          "resource": "ldoa12",
+          "min_uv": 1800000,
+          "max_uv": 1800000
+        },
+        {
+          "property": "vdda33-supply",
+          "node": "/soc/rsc@18200000/rpmh-regulator-ldoa2/regulator-pm8150-l2",
+          "name": "pm8150_l2",
+          "resource": "ldoa2",
+          "min_uv": 3072000,
+          "max_uv": 3072000
+        }
+      ]
+    }
+  ],
+  "limitation": "Actual bootloader SoC revision/overlay selection is not captured."
+}

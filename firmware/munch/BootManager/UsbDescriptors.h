@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: APSL-2.0
  * USB descriptors and protocol sequence adapted from the UMI loader at
- * 6b6fb2b0c5a1720496ec71e88c95d2a45a0046a4. See README.md for provenance.
+ * commit 6b6fb2b0c5a1720496ec71e88c95d2a45a0046a4. The original repository
+ * location must be recovered before this file is redistributed independently;
+ * see THIRD_PARTY.md.
  * The probe accepts only information queries, ping, and reboot.
  */
 

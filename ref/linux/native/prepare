@@ -1,0 +1,154 @@
+#!/bin/sh
+# Called inside the newly unpacked tmpfs, before /proc, /dev and /sys move.
+set -eu
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+fail() { echo "Native preflight: $*" >&2; exit 1; }
+[ -f /.pmos-munch-ready ] || fail 'not a prepared RAM rootfs'
+[ -c /dev/null ] || fail '/dev/null is missing; bootstrap must mount /dev before preflight'
+[ "$(id -u)" = 0 ] || fail 'root required'
+# Saved rootfs archives omit these mount/runtime trees entirely.
+mkdir -p /tmp /var/tmp /run /proc /sys /mnt /media /dev/pts /dev/shm
+chmod 1777 /tmp /var/tmp
+[ "$(readlink /sbin/init)" = /bin/busybox ] || fail 'expected Alpine BusyBox init; refusing another init implementation'
+for cmd in openrc openrc-run rc-service udevd udevadm dbus-daemon NetworkManager nmcli nmtui seatd phoc squeekboard dbus-run-session setsid addgroup; do
+ command -v "$cmd" >/dev/null || fail "missing $cmd; install native prerequisites in the working rootfs first"
+done
+[ -x /usr/libexec/phosh ] || fail 'Phosh is missing'
+[ -x /lib/ld-musl-aarch64.so.1 ] || fail 'AArch64 musl loader is missing'
+/bin/busybox --list | grep -qx init || fail 'BusyBox init applet is missing'
+uid=$(id -u pmos) || fail 'pmos user is missing'
+[ "$uid" -gt 0 ] || fail 'pmos must be unprivileged'
+if [ -r /etc/pmos-munch/wifi-module-release ]; then
+ release=$(cat /etc/pmos-munch/wifi-module-release)
+ [ "$release" = "$(uname -r)" ] || fail 'kernel module release mismatch'
+ command -v modprobe >/dev/null || fail 'modprobe is missing'
+ [ -s "/lib/modules/$release/modules.dep" ] || fail 'kernel module dependencies missing'
+ for name in amss.bin m3.bin board-2.bin; do
+  found=0
+  for base in /usr/lib/firmware /lib/firmware; do
+   for suffix in '' .xz .zst; do
+    [ ! -r "$base/ath11k/QCA6390/hw2.0/$name$suffix" ] || found=1
+   done
+  done
+  [ "$found" = 1 ] || fail "Wi-Fi firmware missing: $name"
+ done
+fi
+for group in video input render; do
+ grep -q "^$group:" /etc/group || fail "missing $group group"
+ addgroup pmos "$group"
+done
+fw=/usr/lib/firmware
+[ -d "$fw/qcom" ] || fw=/lib/firmware
+for name in a650_sqe.fw a650_gmu.bin; do
+ found=0
+ for file in "$fw/qcom/$name" "$fw/qcom/$name.xz" "$fw/qcom/$name.zst" "$fw/$name" "$fw/$name.xz" "$fw/$name.zst"; do
+  [ ! -r "$file" ] || found=1
+ done
+ [ "$found" = 1 ] || fail "GPU firmware missing: $name"
+done
+[ -r "$fw/qcom/sm8250/xiaomi/munch/a650_zap.mbn" ] || fail 'signed munch ZAP missing'
+# An old userspace calibration must not be combined with the corrected DT.
+rm -f /etc/udev/rules.d/99-munch-touch-calibration.rules
+backup=/etc/pmos-munch/before-native
+if [ ! -d "$backup" ]; then
+ mkdir -p "$backup"
+ for file in inittab fstab rc.conf runlevels; do
+  [ ! -e "/etc/$file" ] || cp -a "/etc/$file" "$backup/"
+ done
+fi
+# Do not inherit generic-board disk, USB-network, swap or automatic PM jobs.
+rm -rf /etc/runlevels
+for level in sysinit boot default shutdown; do mkdir -p "/etc/runlevels/$level"; done
+add_service() {
+ level=$1; name=$2
+ [ -x "/etc/init.d/$name" ] || fail "missing OpenRC service $name"
+ ln -s "/etc/init.d/$name" "/etc/runlevels/$level/$name"
+}
+for name in devfs dmesg sysfs cgroups udev udev-trigger udev-settle; do add_service sysinit "$name"; done
+for name in hostname bootmisc sysctl tmpfs; do add_service boot "$name"; done
+add_service boot pmos-munch-firmware
+for name in dbus networkmanager pmos-munch-seatd pmos-munch-phosh; do add_service default "$name"; done
+for name in killprocs mount-ro; do add_service shutdown "$name"; done
+# Required services may pull in root/fsck/localmount: fstab deliberately has
+# only virtual filesystems. No internal disk or USB stick is mounted here.
+cat > /etc/fstab <<'CONFIG'
+# Native RAM test: rootfs is already mounted; never mount internal storage.
+devpts /dev/pts devpts nosuid,noexec,gid=5,mode=0620 0 0
+shm /dev/shm tmpfs nosuid,nodev,mode=1777,size=64M 0 0
+CONFIG
+cat > /etc/inittab <<'CONFIG'
+::sysinit:/sbin/openrc sysinit
+::sysinit:/sbin/openrc boot
+# Start default services asynchronously so a stalled GUI cannot hide consoles.
+::once:/sbin/openrc default
+tty2::respawn:/usr/local/sbin/pmos-munch-native-console
+ttyGS0::respawn:/usr/local/sbin/pmos-munch-native-console
+::ctrlaltdel:/sbin/reboot
+::shutdown:/sbin/openrc shutdown
+CONFIG
+printf '\nrc_cgroup_mode="unified"\nrc_logger="YES"\n' >> /etc/rc.conf
+printf 'munch-ram\n' > /etc/hostname
+mkdir -p /var/log /run /dev/pts /dev/shm /home/pmos
+chown pmos:pmos /home/pmos
+# The supervised seatd session has no logind active-session authorization.
+# Grant only the network actions needed by this single-user RAM desktop.
+mkdir -p /etc/polkit-1/rules.d
+cat > /etc/polkit-1/rules.d/00-pmos-munch-network.rules <<'POLKIT'
+polkit.addRule(function(action, subject) {
+ if (subject.user !== "pmos") return;
+ var actions = [
+  "org.freedesktop.NetworkManager.enable-disable-network",
+  "org.freedesktop.NetworkManager.enable-disable-wifi",
+  "org.freedesktop.NetworkManager.network-control",
+  "org.freedesktop.NetworkManager.wifi.scan",
+  "org.freedesktop.NetworkManager.settings.modify.own",
+  "org.freedesktop.NetworkManager.settings.modify.system"
+ ];
+ if (actions.indexOf(action.id) !== -1) return polkit.Result.YES;
+});
+POLKIT
+chmod 0644 /etc/polkit-1/rules.d/00-pmos-munch-network.rules
+# Use NetworkManager rather than a second standalone supplicant on wlan0.
+cat > /usr/local/bin/pmos-connect <<'CONFIG'
+#!/bin/sh
+exec nmtui connect
+CONFIG
+cat > /usr/local/bin/phosh-start <<'CONFIG'
+#!/bin/sh
+exec rc-service pmos-munch-phosh start
+CONFIG
+cat > /usr/local/bin/pmos-diagnose <<'DIAGNOSTICS'
+#!/bin/sh
+# Read-only userspace diagnostics; optionally mirror them into the kernel log.
+set -u
+case "${1:-}" in ''|--kmsg) ;; *) echo 'Usage: pmos-diagnose [--kmsg]'; exit 1;; esac
+report=/run/pmos-munch-diagnostics.txt
+{
+ echo '=== pmos-munch native diagnostics ==='
+ echo '--- PID1 ---'
+ cat /proc/1/comm
+ echo '--- OpenRC ---'
+ if command -v timeout >/dev/null; then timeout 5 rc-status --all || :; fi
+ for state in started starting failed; do
+  echo "OpenRC $state:"
+  ls "/run/openrc/$state"
+ done
+ echo '--- Desktop user and devices ---'
+ id pmos
+ ls -ld /run/user/* /run/seatd.sock /dev/dri/*
+ for file in /var/log/pmos-munch-phosh.log /var/log/pmos-munch-seatd.log /var/log/rc.log; do
+  echo "--- $file ---"
+  tail -n 80 "$file"
+ done
+} > "$report" 2>&1
+cat "$report"
+if [ "${1:-}" = --kmsg ]; then
+ [ -c /dev/kmsg ] || { echo 'Kernel log unavailable; use the printed report'; exit 1; }
+ while IFS= read -r line; do
+  printf '<6>pmos-munch-diag: %s\n' "$line" > /dev/kmsg
+ done < "$report"
+fi
+DIAGNOSTICS
+chmod 755 /usr/local/bin/pmos-connect /usr/local/bin/phosh-start /usr/local/bin/pmos-diagnose
+printf 'native\n' > /etc/pmos-munch/native-boot
+echo "Native profile ready: OpenRC, NetworkManager, Phosh user pmos (uid $uid)."
