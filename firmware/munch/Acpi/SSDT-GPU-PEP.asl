@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
-// Windows28: core PEP bring-up; CPU/system low power is disabled by the installer.
+// Unfinished initial PEP contract; reference resources require board validation.
 DefinitionBlock ("SSDT-GPU-PEP.aml", "SSDT", 2, "MUNCH ", "PEPCORE ", 1)
 {
     Scope (\_SB)
@@ -67,12 +67,6 @@ DefinitionBlock ("SSDT-GPU-PEP.aml", "SSDT", 2, "MUNCH ", "PEPCORE ", 1)
             Name (_CID, "PNP0D80")
             Name (_UID, Zero)
             Name (_STA, 0x0F)
-            // Driver validates its full PnP hardware ID using this method.
-            // The reference adds PEPH in a separate Scope (\_SB.PEP0).
-            Method (PEPH, 0, NotSerialized)
-            {
-                Return (Package () { "ACPI\\VEN_QCOM&DEV_2519" })
-            }
             // No old IPCC HID or invented placeholder dependency is exposed.
             Method (_CRS, 0, NotSerialized)  // _CRS: Current Resource Settings
             {
@@ -162,12 +156,6 @@ DefinitionBlock ("SSDT-GPU-PEP.aml", "SSDT", 2, "MUNCH ", "PEPCORE ", 1)
                 CreateWordField (BUFF, 0x02, DATA)
                 DATA = One
                 Return (DATA) /* \_SB_.PEP0.GEPT.DATA */
-            }
-            // Native Idle_CoreTopology loader requires this typed package.
-            // Eight physical cores match the captured DT and MADT CPU UIDs.
-            Method (CTPM, 0, NotSerialized)
-            {
-                Return (Package () { "CORE_TOPOLOGY", 0x08 })
             }
             // Native reference defaults for optional initial queries.
             Method (PGDS, 0, NotSerialized) { Return (Zero) }

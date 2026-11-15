@@ -99,7 +99,7 @@ def main():
         for n in names: assert z.read('payload/' + n) == (stage / n).read_bytes()
         assert '@SUMS_SHA@' not in z.read('META-INF/com/google/android/update-binary').decode()
     if args.stage == 'pep':
-        portable = OUT / 'munch-pep-fix-windows.zip'
+        portable = OUT / 'munch-pep-initial-windows.zip'
         with zipfile.ZipFile(portable, 'w', zipfile.ZIP_DEFLATED) as z:
             for n in names:
                 z.write(stage / n, 'GPU' + destination + '/' + n)

@@ -5,6 +5,7 @@ import argparse
 import json
 import struct
 import uuid
+import zlib
 from pathlib import Path
 from uefi_firmware.uefi import FirmwareVolume, FirmwareFile, FirmwareFileSystemSection
 
@@ -19,7 +20,7 @@ def main():
     gpu.add_argument('--gpu-pmic', action='store_true')
     gpu.add_argument('--gpu-pep', action='store_true')
     parser.add_argument('--pep-prep', action='store_true', help='Require Kona CPU container paths; combine with --gpu-pmic')
-    parser.add_argument('--image', type=Path, default=ROOT / 'out/munch-fresh/munch-uefi-diag1.img')
+    parser.add_argument('--image', type=Path, default=ROOT / 'out/munch-fresh/munch-uefi.img')
     parser.add_argument('--raw-storage', action='store_true', help='Require UFS and exclude partition/FAT drivers')
     parser.add_argument('--winpe', action='store_true', help='Require UFS/FAT with custom read-only partition views')
     parser.add_argument('--usb-acpi', action='store_true', help='Require the experimental xHCI DSDT in the final FV')
@@ -36,6 +37,20 @@ def main():
                 if 'Binaries/munchFresh/' + m['template'] in fdf
                 and 'INF ' + m['template'] not in source_fdf}
     fd = (ROOT / 'Mu-Silicium/Build/munchFreshPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd').read_bytes()
+    # Verify that the selected Android image contains this exact build, not an
+    # older profile left beside it in out/. The DTB follows the gzip member.
+    packed = args.image.read_bytes()
+    magic, kernel_size, _, ramdisk_size, _, _, _, _, page, version = struct.unpack_from('<8s9I', packed)
+    assert magic == b'ANDROID!' and version == 1 and page >= 2048
+    assert page & (page - 1) == 0
+    kernel = packed[page:page + kernel_size]
+    assert len(kernel) == kernel_size
+    decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    raw = decoder.decompress(kernel) + decoder.flush()
+    assert decoder.eof and decoder.unused_data == (ROOT / 'inputs/munch/live.dtb').read_bytes()
+    assert raw == (ROOT / 'out/munch-fresh/shim.bin').read_bytes() + fd, 'Image does not match the current firmware build'
+    ramdisk_offset = page + (kernel_size + page - 1) // page * page
+    assert ramdisk_size > 0 and ramdisk_offset + ramdisk_size <= len(packed)
     volume = FirmwareVolume(fd)
     assert volume.process()
     checked, acpi, present = set(), set(), set()
@@ -73,8 +88,6 @@ def main():
                         assert bytes.fromhex('00010101ff0002000a07040701ff100100010c40000002800000') in data
                         assert (b'QCOM252E' in data) == (args.gpu_pmic or args.gpu_pep)
                         assert (b'QCOM2519' in data) == args.gpu_pep
-                        if args.gpu_pep:
-                            assert b'PEPH' in data and b'ACPI\\VEN_QCOM&DEV_2519' in data
                         if args.gpu_pmic or args.gpu_pep:
                             assert b'PMCF' in data and b'PNP0CA3' in data
                 if data[:4] == b'DSDT' and args.usb_acpi:

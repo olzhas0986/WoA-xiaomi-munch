@@ -18,4 +18,7 @@ file-backed fake partitions, changing only command lookup for mock utilities.
 Wrong device, wrong size and wrong hash cases are rejected before writes. The
 success case writes only the intended two fake partitions and verifies both
 readbacks. ZIP CRC and decompressed image hashes also pass host checks.
-Actual TWRP installation and Windows boot still require hardware testing.
+Host fixtures do not validate device-side recovery writes. The confirmed
+Windows desktop and foundation-driver status is recorded in
+[STATUS.md](../../../STATUS.md); follow the normal cable/VBUS sequence in
+[README.md](../../../README.md) for temporary firmware boot.

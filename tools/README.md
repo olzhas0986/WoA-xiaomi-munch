@@ -22,3 +22,14 @@ Recovery/deployment scripts can write phone partitions and are not invoked by
 profile numbers in log-analysis filenames are experiment identifiers, not
 images that a new user should boot. Never run a write-capable tool without
 reading its source and confirming every expected partition identity.
+
+
+`python3 tools/clean-build.py` previews known generated outputs; `make clean`
+validates and removes them. Device inputs, dependency sources, `.git`, `.venv`
+and vendor templates are retained.
+
+PEP research starts with `docs/PEP.md`. The retained optional tools are
+`audit-kona-pep.py`, `prepare-munch-pep-prep.py` (read-only readiness package)
+and `prepare-kona-gpu-bootstrap.py --stage pep` (initial installer scaffolding).
+They require the pinned local BSP described there. `make pep` / `make verify-pep`
+build and check the unfinished ACPI profile without requiring that BSP.

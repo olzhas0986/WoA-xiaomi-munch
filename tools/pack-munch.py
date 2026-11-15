@@ -18,11 +18,12 @@ def sha(data):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--output', type=Path, default=OUT / 'munch-uefi-diag1.img')
+    parser.add_argument('--output', type=Path, default=OUT / 'munch-uefi.img')
     args = parser.parse_args()
     fd, dtb = FD.read_bytes(), DTB.read_bytes()
     if len(fd) != 0x300000:
         raise SystemExit('Unexpected FD size')
+    OUT.mkdir(parents=True, exist_ok=True)
     subprocess.run(['clang', '--target=aarch64-linux-gnu', '-c',
                     str(ROOT / 'firmware/munch/bootshim.S'), '-DFD_BASE=0x9FC00000',
                     '-DFD_SIZE=0x300000', '-o', str(OUT / 'shim.o')], check=True)

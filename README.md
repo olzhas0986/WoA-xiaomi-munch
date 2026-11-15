@@ -16,6 +16,11 @@ Project Silicium / Microsoft Project Mu.
 
 ## Current state
 
+Базовые драйверы готовы. Следующий этап — ACPI-контракт и запуск Qualcomm PEP QCOM2519.
+
+SCM (`qcscm`), RPEN (`QCRPEN`), SPMI (`qcspmi`) and core PMIC (`qcpmic`)
+have reached Running / Code 0. PEP implementation and validation begin here.
+
 | Area | State | Notes |
 |---|---|---|
 | UEFI display / GOP | Working | 1080×2400 framebuffer |
@@ -26,10 +31,11 @@ Project Silicium / Microsoft Project Mu.
 | Fastboot log/control endpoint | Working fallback | Appears only if automatic Windows boot returns/fails |
 | Touch | Not working | Linux driver work is included as reference; no Windows driver |
 | GPU acceleration | Not working | Windows uses Microsoft Basic Display Adapter |
-| Power management | Unsafe | PEP experiments can produce BSODs; shutdown/suspend are unreliable |
+| PEP (`QCOM2519`) | Not validated | Next: ACPI contract and initial driver startup |
+| Power management | Unstable | Shutdown and power transitions remain unreliable |
 | Audio, cameras, modem, Wi-Fi, Bluetooth | Not implemented/tested | Do not assume support |
 
-See [STATUS.md](STATUS.md) for precise test results and failure modes.
+See [STATUS.md](STATUS.md) for confirmed results and limitations.
 
 ## Build in four commands
 
@@ -84,10 +90,10 @@ deliberately does not automate flashing a boot partition.
 |---|---|
 | `firmware/munch/` | UEFI BDS, ACPI, USB/UFS, fastboot and framebuffer console sources |
 | `platform/munchPkg/` | Small platform overlay used to create `munchFreshPkg` |
-| `tools/` | Build, verification, Windows/recovery and crash-analysis utilities |
+| `tools/` | Build, verification, Windows/recovery and hardware-analysis utilities |
 | `vendor-templates/` | Metadata-only INF templates used to extract the user's own XBL |
 | `ref/linux/` | Reference device trees, kernel patches, drivers and initramfs used during hardware bring-up |
-| `docs/` | Architecture, installation, PEP safety and provenance |
+| `docs/` | Architecture, installation, PEP research and provenance |
 
 The normal path is `make stable`; here “stable” means the tested UEFI profile,
 not that Windows power management is stable. `make pep` exposes the unfinished

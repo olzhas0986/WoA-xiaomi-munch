@@ -1,56 +1,53 @@
-# Windows26: core PMIC interface
+# Core PMIC foundation
 
-The user has confirmed SCM, RPEN and SPMI all show Status OK, code 0 in
-Windows25. Windows26 preserves those nodes and adds PMIC/QCOM252E, the exact
-ID in the pinned qcpmic8250.inf. _CID PNP0CA3 and _DEP on SPMI follow the
-reference Qualcomm namespace. No PMIC GPIO, battery, charger, regulator,
-PEP, SMMU or GPU clients are added by this stage.
+Confirmed on POCO F4 / munch: SCM (`qcscm`), RPEN (`QCRPEN`), SPMI (`qcspmi`)
+and core PMIC (`qcpmic`) have reached Running / Code 0. This directory retains
+the individual Core PMIC installer (`qcpmic`, `QCOM252E`). Startup does not
+validate every driver operation or GPU/power support.
 
-The alioth PMCF template contains four pairs (0/1, 2/3, 4/5, 6/7), but 6/7
-are absent from the captured munch DT. Do not copy that board layout.
-This core-interface test uses the native three-pair PMCF layout found in the
-nabu Kona reference: count 3, pairs (0/1, 2/3, 4/5). Those correspond to the
-captured PM8150, PM8150B and PM8150L nodes. The build explicitly checks each
-of the six captured slave addresses before enabling this profile.
+Базовые драйверы готовы. Следующий этап — ACPI-контракт и запуск Qualcomm PEP QCOM2519.
+See [docs/PEP.md](../../../docs/PEP.md). The normal firmware is built with
+`make stable` and `make verify`; it exposes all four foundation devices,
+without an active PEP device. GPU acceleration and Windows touch do not work.
+Shutdown/power management and OTG hot detach remain unstable; keyboard support
+on the latest profile is unconfirmed.
 
-The captured DT additionally contains modem PMXprairie at 8/9 and camera
-PM8009 at a/b. Those are outside this initial core-interface test; this is
-not a complete description of all physical PMICs. No guessed device at
-6/7 is exposed. The PMIC driver's runtime interpretation still requires
-hardware validation, even though the package ABI matches a reference.
+## Source and ACPI
 
-Driver: qcpmic8250.sys, ARM64, version 1.0.2100.0000, KMDF 1.25,
-boot-start service qcpmic, group Filter. The original INF contains no
-board-specific regulator settings. INF/CAT/SYS are copied unchanged from
-WOA-Project/windows_silicon_qcom_kona commit
-22221a09e02cb7054792427af60299b1c34d3c3e. The catalog certificate is the same
-WOA signer already accepted for SCM/RPEN/SPMI. The original license is included.
+Source BSP: [WOA-Project/windows_silicon_qcom_kona](https://github.com/WOA-Project/windows_silicon_qcom_kona),
+commit `22221a09e02cb7054792427af60299b1c34d3c3e`.
+The ARM64 driver version is 1.0.2100.0000. INF/CAT/SYS are copied unchanged,
+with the original BSP license and public WOA KMCI catalog certificate
+`946CF507369A80E65F2B58BEBF5D02CC159A484D`. No private signing key is used.
+The optional local BSP checkout is described in docs/PEP.md.
 
-Build:
+PMIC uses PNP0CA3 CID and depends on SPMI. PMCF follows the nabu native
+three-pair ABI: count 3, (0/1), (2/3), (4/5), matching PM8150/PM8150B/PM8150L
+in the live DT. The build checks all six slave addresses. Do not copy alioth's
+extra 6/7 pair. Modem PMXprairie (8/9), camera PM8009 (a/b), battery, charger,
+GPIO and regulators are outside this core-interface stage.
 
-    MUNCH_GPU_FOUNDATION=4 MUNCH_USB_ACPI=1 MUNCH_UFS_ACPI=1 bash tools/build-munch.sh
-    python3 tools/pack-munch.py --output out/munch-fresh/munch-uefi-windows26-pmic.img
-    .venv/bin/python tools/verify-munch.py --image out/munch-fresh/munch-uefi-windows26-pmic.img --gpu-pmic --winpe --usb-acpi --ufs-acpi --no-preboot-kbd
-    python3 tools/prepare-kona-gpu-bootstrap.py --stage pmic
+## Individual installation tool
 
-Install out/kona-gpu/munch-gpu-pmic-bootstrap-twrp.zip in TWRP with ESP
-unmounted. It only copies its files to ESP/MUNCH/GPU26. Then boot the
-Windows26 image with fastboot boot. In administrator PowerShell:
+`python3 tools/prepare-kona-gpu-bootstrap.py --stage pmic` creates
+`out/kona-gpu/munch-gpu-pmic-bootstrap-twrp.zip`. Install only with the ESP
+unmounted; the recovery installer checks device, GPT, geometry and hashes,
+then copies to the legacy `ESP/MUNCH/GPU26` folder. It does not install a
+Windows driver or replace EFI/BCD. Differing existing files stop installation.
 
-    mountvol S: /S
-    S:\MUNCH\GPU26\setup.cmd
+Follow the root [README boot sequence](../../../README.md): immediately remove
+the PC cable/VBUS after `fastboot boot` finishes, allow automatic Windows boot,
+then connect OTG mouse after the Windows logo. The diagnostic `fastboot oem
+windows` command is a fallback only.
 
-Choose another unused letter if S: is occupied. Installation requires active
-test signing, the existing publisher certificate and SCM/RPEN/SPMI code 0.
-Only qcpmic8250.inf is installed. The script prints four services and saves
-C:\munch-gpu-pmic/report.json for the existing TWRP log collector.
+In administrator Windows, mount the ESP with `mountvol S: /S` (choose an unused
+letter) and run `S:\MUNCH\GPU26\setup.cmd`. It requires active test signing,
+the existing publisher certificate and Code 0 for SCM, RPEN and SPMI. It changes
+neither BCD nor certificate stores.
 
-Additional status: setup.cmd report. Normal removal: setup.cmd rollback,
-then boot Windows25. Existing SCM/RPEN/SPMI and signing settings are retained.
-Removal requires that this experiment owns the recorded published INF and
-that it is not bound to another kind of device. A startup crash can require
-offline service removal in recovery; that procedure is not automated.
-
-Code 0 would confirm only core PMIC PnP startup. GPU acceleration and working
-power transitions are not established by this test. PEP and the remaining
-GPU dependencies still require adaptation.
+`setup.cmd report` records status; `setup.cmd rollback` removes only an owned,
+unshared package. SCM rollback also restores signing settings it changed;
+other foundation packages leave prerequisite drivers/signing intact. No
+automatic shutdown or reboot is requested. Recovery/offline removal may be
+needed if Windows cannot boot. The read-only recovery log collector retrieves
+the install reports. These tools are optional and are not run by `make stable`.

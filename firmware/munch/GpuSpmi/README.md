@@ -1,59 +1,54 @@
-# Windows25: SPMI bus bring-up
+# SPMI foundation
 
-Observed device results: SCM/qcscm and RPEN/QCRPEN both report Status OK,
-ConfigManagerErrorCode 0 in Windows24. PnP startup does not verify every
-operation offered by either driver.
+Confirmed on POCO F4 / munch: SCM (`qcscm`), RPEN (`QCRPEN`), SPMI (`qcspmi`)
+and core PMIC (`qcpmic`) have reached Running / Code 0. This directory retains
+the individual SPMI installer (`qcspmi`, `QCOM250C`). Startup does not
+validate every driver operation or GPU/power support.
 
-Windows25 retains those nodes and adds only SPMI/QCOM250C, using the explicit
-match from the pinned Kona BSP qcspmi8250.inf. No PMIC client, PEP, GPIO,
-SMMU or GPU node is enumerated. This test measures bus-driver startup; it
-is not a GPU acceleration or regulator-control test.
+Базовые драйверы готовы. Следующий этап — ACPI-контракт и запуск Qualcomm PEP QCOM2519.
+See [docs/PEP.md](../../../docs/PEP.md). The normal firmware is built with
+`make stable` and `make verify`; it exposes all four foundation devices,
+without an active PEP device. GPU acceleration and Windows touch do not work.
+Shutdown/power management and OTG hot detach remain unstable; keyboard support
+on the latest profile is unconfirmed.
 
-SPMI resource provenance:
+## Source and ACPI
 
-* Captured inputs/munch/live.dtb, /soc/qcom,spmi@c440000, contains the
-  register windows c440000/1100, c600000/2000000, e600000/100000,
-  e700000/a0000 and c40a000/26000, execution environment 0, channel 0.
-  The build refuses this profile if any of these properties changes.
-* The Qualcomm reference ACPI SPMI window c400000/2800000 contains all
-  those windows. It is the same in the alioth and nabu reference tables.
-* The CONF method returns the exact 26-byte vendor configuration buffer
-  found in both reference devices. Unknown fields are preserved rather
-  than assigned guessed meanings. Compatibility with this particular
-  Windows driver still requires a device test.
-* The old alioth SPMI ID QCOM250B conflicts with our current SCM ID and
-  must not be reused. qcspmi8250.inf explicitly matches QCOM250C.
-* Native reference _CID PNP0CA2, _UID 1, and _CCA 0 are preserved.
+Source BSP: [WOA-Project/windows_silicon_qcom_kona](https://github.com/WOA-Project/windows_silicon_qcom_kona),
+commit `22221a09e02cb7054792427af60299b1c34d3c3e`.
+The ARM64 driver version is 1.0.2100.0000. INF/CAT/SYS are copied unchanged,
+with the original BSP license and public WOA KMCI catalog certificate
+`946CF507369A80E65F2B58BEBF5D02CC159A484D`. No private signing key is used.
+The optional local BSP checkout is described in docs/PEP.md.
 
-Source BSP commit: 22221a09e02cb7054792427af60299b1c34d3c3e.
-qcspmi8250.sys is ARM64, 1.0.2100.0000, boot-start service qcspmi, group
-Filter. The original INF configures its WMI autologger. INF/CAT/SYS remain
-byte-identical to the BSP. The WOA catalog certificate matches the already
-installed SCM/RPEN signer. No new certificate or BCD change is required.
+SPMI uses the reference 0x0C400000/0x02800000 window, PNP0CA2 CID, UID 1,
+CCA 0, and byte-identical 26-byte CONF vendor buffer. The live DT register
+windows are c440000/1100, c600000/2000000, e600000/100000, e700000/a0000
+and c40a000/26000, with execution environment/channel 0. The build checks these
+inputs. The old alioth QCOM250B ID conflicts with SCM and must not be reused.
+CONF's unknown fields retain their reference meaning; no guessed replacements.
 
-Build:
+## Individual installation tool
 
-    MUNCH_GPU_FOUNDATION=3 MUNCH_USB_ACPI=1 MUNCH_UFS_ACPI=1 bash tools/build-munch.sh
-    python3 tools/pack-munch.py --output out/munch-fresh/munch-uefi-windows25-spmi.img
-    .venv/bin/python tools/verify-munch.py --image out/munch-fresh/munch-uefi-windows25-spmi.img --gpu-spmi --winpe --usb-acpi --ufs-acpi --no-preboot-kbd
-    python3 tools/prepare-kona-gpu-bootstrap.py --stage spmi
+`python3 tools/prepare-kona-gpu-bootstrap.py --stage spmi` creates
+`out/kona-gpu/munch-gpu-spmi-bootstrap-twrp.zip`. Install only with the ESP
+unmounted; the recovery installer checks device, GPT, geometry and hashes,
+then copies to the legacy `ESP/MUNCH/GPU25` folder. It does not install a
+Windows driver or replace EFI/BCD. Differing existing files stop installation.
 
-Install out/kona-gpu/munch-gpu-spmi-bootstrap-twrp.zip in TWRP with ESP
-unmounted, then boot the above image with fastboot boot. The ZIP only
-copies its files to the separate ESP/MUNCH/GPU25 folder.
+Follow the root [README boot sequence](../../../README.md): immediately remove
+the PC cable/VBUS after `fastboot boot` finishes, allow automatic Windows boot,
+then connect OTG mouse after the Windows logo. The diagnostic `fastboot oem
+windows` command is a fallback only.
 
-Administrator PowerShell, using an unused drive letter:
+In administrator Windows, mount the ESP with `mountvol S: /S` (choose an unused
+letter) and run `S:\MUNCH\GPU25\setup.cmd`. It requires active test signing,
+the existing publisher certificate and Code 0 for SCM and RPEN. It changes
+neither BCD nor certificate stores.
 
-    mountvol S: /S
-    S:\MUNCH\GPU25\setup.cmd
-
-The script requires active test signing, the existing publisher certificate,
-and both SCM and RPEN code 0 before installing only qcspmi8250.inf. It prints
-a short status table and writes C:\munch-gpu-spmi/report.json. These files
-are included in the existing read-only TWRP log collector.
-
-Additional status: setup.cmd report. Normal removal: setup.cmd rollback,
-then boot Windows24. SCM, RPEN and the existing signing settings remain.
-Rollback removes the published INF only if this experiment added it and
-it is not shared with another kind of device. A boot-time crash may require
-recovery/offline service removal; that procedure is not automated.
+`setup.cmd report` records status; `setup.cmd rollback` removes only an owned,
+unshared package. SCM rollback also restores signing settings it changed;
+other foundation packages leave prerequisite drivers/signing intact. No
+automatic shutdown or reboot is requested. Recovery/offline removal may be
+needed if Windows cannot boot. The read-only recovery log collector retrieves
+the install reports. These tools are optional and are not run by `make stable`.

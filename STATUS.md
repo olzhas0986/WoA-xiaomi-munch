@@ -1,40 +1,36 @@
 # Hardware status
 
-Results below refer to POCO F4 (`munch`), Snapdragon 870, 6 GB RAM, with the
-tested input hashes in `BUILDING.md`.
+Базовые драйверы готовы. Следующий этап — ACPI-контракт и запуск Qualcomm PEP QCOM2519.
 
-| Component | Result | Evidence / limitation |
+Confirmed baseline: POCO F4 (`munch`), Snapdragon 870, 6 GB RAM, Mu-Silicium
+UEFI and the input hashes in [BUILDING.md](BUILDING.md).
+
+| Component | Result | Limitation |
 |---|---|---|
-| Firmware UI and framebuffer | Pass | GOP reports 1080×2400; framebuffer console and Windows output work |
-| CPU topology | Pass | Windows sees 8 logical processors |
-| RAM | Pass | Windows sees 6.00 GB installed / about 5.34 GB usable |
-| ACPI core tables | Pass | FACP, APIC and GTDT are generated and checksum-verified |
-| UFS | Pass | Installer and installed Windows access internal storage |
-| USB mouse | Pass | Pointer and clicks work in Setup and desktop |
-| USB keyboard | Unconfirmed on final profile | It failed in earlier trials and was not revalidated after the final USB changes |
-| USB mass storage | Pass | Files can be read/written from Windows |
-| Windows installation/desktop | Pass | Windows 11 IoT Enterprise LTSC 24H2 reached desktop |
-| SCM (`QCOM250B`) | Pass | Qualcomm driver reached PnP status OK / code 0 |
-| RPEN, SPMI, core PMIC | Pass as foundation | Staged drivers reached code 0 in isolation |
-| GPU | Fail | No Adreno WDDM device; Basic Display framebuffer only |
-| Touch | Fail | No Windows touch driver; Linux implementation is reference material |
-| PEP (`QCOM2519`) | Experimental/fail | Driver reached code 31/ProblemStatus `0xC000000E`; later tests crashed |
-| Suspend/shutdown | Fail | `INTERNAL_POWER_ERROR` and `CLOCK_WATCHDOG_TIMEOUT` observed |
-| PC detach before boot | Required | Unplug immediately after `fastboot boot` finishes so VBUS is absent for host hand-off |
-| OTG hot detach in Windows | Unstable | Some later detach sequences reboot or crash firmware/Windows |
-| Audio/camera/modem/radios | Unknown | Not implemented or validated |
+| Windows 11 ARM64 | Desktop boots | Tested with IoT Enterprise LTSC 24H2 |
+| CPU / RAM | 8 CPUs / 6 GB installed | About 5.34 GiB usable |
+| Framebuffer / GOP | Working | 1080×2400; Basic Display output |
+| ACPI core tables | Generated and verified | FACP, APIC, GTDT and CPU namespace |
+| UFS | Working | Installation and internal Windows storage |
+| USB mouse / storage | Working | Keyboard unconfirmed on the latest profile |
+| SCM (`qcscm`, `QCOM250B`) | Running / Code 0 | Foundation startup confirmed |
+| RPEN (`QCRPEN`, `QCOM2533`) | Running / Code 0 | Foundation startup confirmed |
+| SPMI (`qcspmi`, `QCOM250C`) | Running / Code 0 | Foundation startup confirmed |
+| Core PMIC (`qcpmic`, `QCOM252E`) | Running / Code 0 | Core interface; not all PMIC clients |
+| PEP (`QCOM2519`) | Research starts here | ACPI contract and startup are not validated |
+| GPU acceleration | Not working | No Adreno WDDM acceleration |
+| Windows touch | Not working | Linux sources are reference material |
+| Shutdown / power management | Unstable | Reliable power transitions are not established |
+| Audio / cameras / modem / radios | Unknown | Not implemented or validated |
 
-## Known PEP failure modes
+`make stable` exposes the four foundation devices and the preparation CPU
+namespace, without a PEP device. Running / Code 0 confirms driver startup,
+not every driver operation, GPU acceleration or working power management.
+`make pep` is an unfinished initial ACPI profile; see [docs/PEP.md](docs/PEP.md).
 
-The diagnostic work produced `PAGE_FAULT_IN_NONPAGED_AREA`,
-`SOC_SUBSYSTEM_FAILURE`, `CLOCK_WATCHDOG_TIMEOUT` and
-`INTERNAL_POWER_ERROR`. The LMH/SOSI binary-patch experiments are retained only
-for analysis and are not part of `make stable`. Do not install a boot-start
-`qcpep` service on a daily-use Windows installation without a recovery path.
-
-## What “GPU foundation” means
-
-Names such as GPU28 in historical logs referred to staged dependencies needed
-before a Kona display/GPU driver can bind: SCM, RPEN, SPMI, PMIC and PEP. Code 0
-for those foundation devices did not mean GPU acceleration was working. No GPU
-driver is installed by the default build.
+Disconnect the PC cable immediately after `fastboot boot` finishes, removing
+VBUS. UEFI automatically attempts Windows boot and waits about ten seconds for
+external power to disappear during USB host preparation. Connect the OTG mouse
+after the Windows logo. `fastboot oem windows` is only a manual retry from the
+diagnostic fastboot endpoint. OTG hot detach after Windows hand-off is unstable
+and can cause a reboot or crash. See [README.md](README.md) for the boot sequence.

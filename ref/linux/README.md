@@ -43,7 +43,8 @@ current USB partition if needed, and wait for **PMOS SAVED** before unplugging.
 
 ## Build and explore
 
-- [Arch Linux ARM in RAM](docs/arch-ram.md) — separate console boot experiment.
+- Arch Linux ARM in RAM — separate console boot experiment; its notes are not
+  included in this source snapshot.
 - [Build setup](docs/build.md) — dependencies, pinned sources and build stages.
 - [Project history](docs/history.md) — milestones and the current direction.
 - [Phosh](docs/pmos-phosh.md) — desktop, keyboard, networking and persistence.

@@ -1,55 +1,51 @@
-# Windows24 SCM + RPEN bring-up
+# RPEN foundation
 
-Windows23 device result: Qualcomm SCM bound to qcscm, Status OK,
-ConfigManagerErrorCode 0, as shown in the user's report. This establishes
-successful PnP startup; individual SCM operations are not fully validated.
+Confirmed on POCO F4 / munch: SCM (`qcscm`), RPEN (`QCRPEN`), SPMI (`qcspmi`)
+and core PMIC (`qcpmic`) have reached Running / Code 0. This directory retains
+the individual RPEN installer (`QCRPEN`, `QCOM2533`). Startup does not
+validate every driver operation or GPU/power support.
 
-Windows24 preserves the same SCM0 namespace and adds only RPEN/QCOM2533.
-The reference alioth RPEN device has no MMIO, interrupts, or ACPI methods
-other than identification and status. Its older QCOM25E1 ID is replaced by
-the explicit QCOM2533 match from the pinned Kona BSP qcrpen8250.inf.
-No reference panel configuration or firmware-placeholder addresses are copied.
+Базовые драйверы готовы. Следующий этап — ACPI-контракт и запуск Qualcomm PEP QCOM2519.
+See [docs/PEP.md](../../../docs/PEP.md). The normal firmware is built with
+`make stable` and `make verify`; it exposes all four foundation devices,
+without an active PEP device. GPU acceleration and Windows touch do not work.
+Shutdown/power management and OTG hot detach remain unstable; keyboard support
+on the latest profile is unconfirmed.
 
-qcrpen8250.sys is ARM64, version 1.0.2100.0000. Its imports are Windows
-kernel/WDF/WPP interfaces. The service is demand-start (StartType 3).
-The INF has no explicit service dependency or board-specific AddReg settings
-other than its administrator/system device ACL. The combined Kona reference
-GPU node lists RPEN as a dependency. These facts justify testing this node
-separately; they do not establish full runtime compatibility in advance.
+## Source and ACPI
 
-Package inputs come unchanged from BSP commit
-22221a09e02cb7054792427af60299b1c34d3c3e. Its catalog certificate thumbprint
-946CF507369A80E65F2B58BEBF5D02CC159A484D matches the Windows23 SCM catalog.
-The Windows24 installer requires active test signing, the existing publisher
-certificate, and SCM code 0. It does not change BCD or certificate stores.
+Source BSP: [WOA-Project/windows_silicon_qcom_kona](https://github.com/WOA-Project/windows_silicon_qcom_kona),
+commit `22221a09e02cb7054792427af60299b1c34d3c3e`.
+The ARM64 driver version is 1.0.2100.0000. INF/CAT/SYS are copied unchanged,
+with the original BSP license and public WOA KMCI catalog certificate
+`946CF507369A80E65F2B58BEBF5D02CC159A484D`. No private signing key is used.
+The optional local BSP checkout is described in docs/PEP.md.
 
-Build:
+The device follows the reference reset-protection node without MMIO,
+interrupts or configuration methods. The current BSP matches QCOM2533; do not
+reuse the older reference QCOM25E1 ID.
 
-    MUNCH_GPU_FOUNDATION=2 MUNCH_USB_ACPI=1 MUNCH_UFS_ACPI=1 bash tools/build-munch.sh
-    python3 tools/pack-munch.py --output out/munch-fresh/munch-uefi-windows24-rpen.img
-    .venv/bin/python tools/verify-munch.py --image out/munch-fresh/munch-uefi-windows24-rpen.img --gpu-rpen --winpe --usb-acpi --ufs-acpi --no-preboot-kbd
-    python3 tools/prepare-kona-gpu-bootstrap.py --stage rpen
+## Individual installation tool
 
-Device steps:
+`python3 tools/prepare-kona-gpu-bootstrap.py --stage rpen` creates
+`out/kona-gpu/munch-gpu-rpen-bootstrap-twrp.zip`. Install only with the ESP
+unmounted; the recovery installer checks device, GPT, geometry and hashes,
+then copies to the legacy `ESP/MUNCH/GPU24` folder. It does not install a
+Windows driver or replace EFI/BCD. Differing existing files stop installation.
 
-1. Install out/kona-gpu/munch-gpu-rpen-bootstrap-twrp.zip in TWRP with ESP
-   unmounted. Only the separate ESP/MUNCH/GPU24 folder is populated.
-2. fastboot boot out/munch-fresh/munch-uefi-windows24-rpen.img
-3. In administrator PowerShell:
+Follow the root [README boot sequence](../../../README.md): immediately remove
+the PC cable/VBUS after `fastboot boot` finishes, allow automatic Windows boot,
+then connect OTG mouse after the Windows logo. The diagnostic `fastboot oem
+windows` command is a fallback only.
 
-       mountvol S: /S
-       S:\MUNCH\GPU24\setup.cmd
+In administrator Windows, mount the ESP with `mountvol S: /S` (choose an unused
+letter) and run `S:\MUNCH\GPU24\setup.cmd`. It requires active test signing,
+the existing publisher certificate and Code 0 for SCM. It changes
+neither BCD nor certificate stores.
 
-   Use another unused letter if S: is occupied. The default phase installs
-   only RPEN and prints the SCM/RPEN status table. Reports are stored in
-   C:\munch-gpu-rpen and can be collected with the existing TWRP log collector.
-4. Additional status: setup.cmd report. Normal removal: setup.cmd rollback,
-   then boot Windows23. SCM and signing settings remain intact. The script
-   records the published INF and removes it only if this experiment added it
-   and it is not bound to another kind of device.
-
-GPU acceleration is still disabled. PEP, PMIC/SPMI, SMMU/IOMMU and the secure
-firmware/display contracts remain to be adapted before exposing GPU0.
-In particular, the reference MMU1 node is disabled, while GPU0 names both
-MMU0/MMU1 as dependencies: simply copying those devices is not sufficient.
-Do not install the entire BSP or load the display miniport at this stage.
+`setup.cmd report` records status; `setup.cmd rollback` removes only an owned,
+unshared package. SCM rollback also restores signing settings it changed;
+other foundation packages leave prerequisite drivers/signing intact. No
+automatic shutdown or reboot is requested. Recovery/offline removal may be
+needed if Windows cannot boot. The read-only recovery log collector retrieves
+the install reports. These tools are optional and are not run by `make stable`.

@@ -23,5 +23,7 @@ while pos<len(madt):
     assert length>=2
     pos+=length
 assert uids==list(range(8)) and sum(madt)%256==0
-(root/'out/kona-gpu/acpi-pep-cpu-evaluation.txt').write_text(out)
+report=root/'out/kona-gpu/acpi-pep-cpu-evaluation.txt'
+report.parent.mkdir(parents=True,exist_ok=True)
+report.write_text(out)
 print('Eight Kona CPU paths, UIDs/MADT and unchanged peripheral definitions: PASS')

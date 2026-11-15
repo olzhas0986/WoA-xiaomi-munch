@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package a read-only Windows27 processor/driver readiness check."""
+"""Package a read-only processor/foundation readiness check."""
 import hashlib,json,subprocess,zipfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
@@ -14,7 +14,7 @@ def main():
     manifest={'stage':'PEP CPU namespace preparation; PEP not installed','dsdt_sha256':sha(dsdt),'files':[{'path':n,'sha256':sha(b)} for n,b in sorted(files.items())]}
     files['manifest.json']=(json.dumps(manifest,indent=2)+'\n').encode()
     sums=''.join(f'{sha(b)}  {n}\n' for n,b in sorted(files.items())).encode()
-    script=(ROOT/'firmware/munch/Recovery/install-gpu-bootstrap').read_text().replace('@SUMS_SHA@',sha(sums)).replace('GPU23','GPU27').replace('gpu23','gpu27').replace('SCM package','PEP preparation files').replace('Boot Windows23 and run setup.cmd configure.','Boot Windows27 and run setup.cmd.')
+    script=(ROOT/'firmware/munch/Recovery/install-gpu-bootstrap').read_text().replace('@SUMS_SHA@',sha(sums)).replace('GPU23','GPU27').replace('gpu23','gpu27').replace('SCM package','PEP preparation files').replace('Boot Windows23 and run setup.cmd configure.','Boot the make stable image and run setup.cmd.')
     dest=OUT/'munch-gpu-pep-prep-twrp.zip'
     with zipfile.ZipFile(dest,'w',zipfile.ZIP_DEFLATED) as z:
         for n,b in files.items():z.writestr('payload/'+n,b)

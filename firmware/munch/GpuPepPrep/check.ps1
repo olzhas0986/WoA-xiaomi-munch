@@ -31,7 +31,7 @@ foreach($id in $expected.Keys){
 }
 [ordered]@{stage='PEP CPU namespace preparation; PEP not installed';time=(Get-Date).ToString('o');dsdt_sha256=$hash;expected_dsdt_sha256=$Manifest.dsdt_sha256;namespace_ok=$namespaceOK;logical_processors=$logical;services_ok=$servicesOK;devices=$devices;processors=@($cpu | Select-Object Name,DeviceID,Architecture,NumberOfCores,NumberOfLogicalProcessors)} | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $LogRoot 'report.json')
 Write-Host "CPU: $logical / 8"
-Write-Host "Windows27 namespace: $namespaceOK"
+Write-Host "Preparation namespace: $namespaceOK"
 Write-Host "SCM/RPEN/SPMI/PMIC: $servicesOK"
 if(-not $namespaceOK -or $logical -ne 8 -or -not $servicesOK){$devices | Format-Table Service,Status,ConfigManagerErrorCode;throw 'Preparation check failed; report saved in C:\munch-gpu-pep'}
 Write-Host 'Preparation OK. PEP driver not installed.'

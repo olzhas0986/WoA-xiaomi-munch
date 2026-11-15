@@ -1,4 +1,4 @@
-.PHONY: deps inputs stable pep verify clean
+.PHONY: deps inputs stable pep verify verify-pep clean
 
 IMAGE := out/munch-fresh/munch-uefi.img
 
@@ -14,7 +14,7 @@ stable:
 	MUNCH_USB_ACPI=1 MUNCH_UFS_ACPI=1 MUNCH_GPU_FOUNDATION=5 bash tools/build-munch.sh
 	python3 tools/pack-munch.py --output $(IMAGE)
 
-# Research profile. Installing/enabling qcpep can crash Windows; read docs/PEP.md.
+# Unfinished initial ACPI contract; hardware startup is not validated. See docs/PEP.md.
 pep:
 	MUNCH_USB_ACPI=1 MUNCH_UFS_ACPI=1 MUNCH_GPU_FOUNDATION=6 bash tools/build-munch.sh
 	python3 tools/pack-munch.py --output out/munch-fresh/munch-uefi-pep.img
@@ -23,5 +23,9 @@ verify:
 	.venv/bin/python tools/verify-munch.py --image $(IMAGE) --winpe --usb-acpi --ufs-acpi --gpu-pmic --pep-prep --no-preboot-kbd
 	.venv/bin/python tools/check-munch-shim.py
 
+verify-pep:
+	.venv/bin/python tools/verify-munch.py --image out/munch-fresh/munch-uefi-pep.img --winpe --usb-acpi --ufs-acpi --gpu-pep --pep-prep --no-preboot-kbd
+	.venv/bin/python tools/check-munch-shim.py
+
 clean:
-	rm -rf out/munch-fresh Mu-Silicium/Build/munchFreshPkg Mu-Silicium/Platforms/Xiaomi/munchFreshPkg
+	python3 tools/clean-build.py --apply

@@ -56,7 +56,6 @@
   gEfiEndOfDxeEventGroupGuid
 
 [Protocols]
-  gEfiSMEMProtocolGuid
   gEfiAcpiTableProtocolGuid
   gEfiUsbDeviceProtocolGuid
   gEfiLoadedImageProtocolGuid

@@ -7,6 +7,7 @@ mu="$root/Mu-Silicium"
     echo "Device inputs are missing; run: make inputs XBL=/path/xbl.img DTB=/path/munch.dtb" >&2
     exit 1
 }
+mkdir -p "$root/out/munch-fresh"
 python3 "$root/tools/munch-acpi.py"
 python3 "$root/tools/prepare-munch.py"
 export WORKSPACE="$mu"

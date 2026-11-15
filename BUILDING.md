@@ -1,5 +1,7 @@
 # Reproducible build
 
+Базовые драйверы готовы. Следующий этап — ACPI-контракт и запуск Qualcomm PEP QCOM2519.
+
 ## Supported host
 
 A recent x86-64 Linux distribution is expected. Arch Linux package names:
@@ -57,12 +59,19 @@ sha256sum out/munch-fresh/munch-uefi.img
 
 `stable` enables the tested USB/UFS ACPI path and Qualcomm foundation through
 PMIC/CPU preparation, but does not expose the unfinished `QCOM2519` PEP device.
+SCM, RPEN, SPMI and core PMIC have reached Running / Code 0 on the phone.
+PEP startup and GPU acceleration are not validated.
 The image is an Android boot-header-v1 container holding an ARM64 relocation
 shim, a 3 MiB UEFI FD and the verified live DTB.
 
 `make verify` parses the final compressed firmware volume, checks unchanged
 vendor-module hashes, ACPI checksums/resources, ARM64 PE machine types and then
 executes the relocation shim under Unicorn.
+
+For the unfinished initial PEP ACPI profile, use `make pep` followed by
+`make verify-pep`; see [docs/PEP.md](docs/PEP.md). Build and verify each profile
+before switching: both use the same generated firmware directory. Host
+verification does not establish that a driver works on the phone.
 
 ## 4. Boot without flashing
 
@@ -112,5 +121,12 @@ make stable
 make verify
 ```
 
-`make clean` removes only known generated build paths inside the checkout. It
-does not remove imported device inputs or the dependency checkout.
+`python3 tools/clean-build.py` previews exact cleanup paths. `make clean`
+checks for tracked files and nested repositories before deleting `out/`,
+`Mu-Silicium/Build/`, the generated `munchFreshPkg` overlay and vendor copies,
+generated ACPI AML and Python caches outside `.venv`. Imported device inputs
+(including extracted XBL), dependency sources and their `.git`, `.venv`, and
+vendor templates are retained. Cleanup refuses paths containing tracked files.
+
+Shutdown and power management remain unstable. USB keyboard support has not
+been confirmed on the latest profile; OTG hot detach in Windows is unstable.

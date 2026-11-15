@@ -81,7 +81,7 @@ if($Phase -eq 'rollback'){
  else{Remove-ItemProperty -Path $PowerRoot -Name PoFxSystemIrpWaitForReportDevicePowered -ErrorAction SilentlyContinue}
  if($state.autologger_existed){$null=Native 'reg.exe' @('import',(Join-Path $LogRoot 'autologger-before.reg')) 'restore-autologger.log'}
  else{Remove-Item -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\WMI\Autologger\qcpep-rpmh' -Recurse -ErrorAction SilentlyContinue}
- Write-Host 'PEP removed. Boot Windows27. Existing four drivers and signing policy retained.'
+ Write-Host 'PEP removed. Boot the make stable image. Existing four drivers and signing policy retained.'
  exit 0
 }
 Add-Type @'
@@ -108,7 +108,7 @@ if(Test-Path $StatePath){
  $state=Get-Content -Raw $StatePath | ConvertFrom-Json
  if($state.bsp_commit -ne $Manifest.bsp_commit){throw 'State belongs to another BSP'}
  if($p[0].Service -ieq 'qcpep' -and $p[0].ConfigManagerErrorCode -eq 0){Report;if(@(Settings | Where-Object {-not $_.ok}).Count){throw 'PEP policy differs from the verified test settings'};Write-Host 'PEP already started with the test policy.';exit 0}
- # Revision 28B stopped here before adding any driver. Keep its snapshots.
+ # Resume only a saved pre-install phase; keep its original snapshots.
  $installed=Get-CimInstance Win32_SystemDriver -Filter "Name='qcpep'"
  if($state.phase -in @('before-disable','waiting-disable-reboot') -and -not $state.published_inf -and -not $state.owned -and -not $p[0].Service -and $p[0].ConfigManagerErrorCode -in @(0,28,22) -and $null -eq $installed){
   $resumeBeforeDisable=$true
@@ -134,7 +134,7 @@ if($p[0].ConfigManagerErrorCode -ne 22){
  if($p.Count -eq 1 -and -not $p[0].Service -and $p[0].ConfigManagerErrorCode -in @(0,28,14)){
   $state.phase='waiting-disable-reboot';Save-State
   Report
-  Write-Host 'Disable needs a reboot. Boot Windows28 again, then rerun this same setup.cmd.'
+  Write-Host 'Disable needs a reboot. Boot the same make pep image, then rerun this setup.cmd.'
   exit 0
  }
 }

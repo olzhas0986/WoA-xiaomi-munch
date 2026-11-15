@@ -1,61 +1,51 @@
-# Windows23: SCM foundation for the Kona GPU port
+# SCM foundation
 
-This is a device test, not a working GPU port. The firmware adds only SCM0
-(ACPI QCOM250B) to the Windows22 CPU/USB/UFS namespace. No GPU, PEP or SMMU
-nodes are exposed. Existing Windows USB handoff remains in place.
+Confirmed on POCO F4 / munch: SCM (`qcscm`), RPEN (`QCRPEN`), SPMI (`qcspmi`)
+and core PMIC (`qcpmic`) have reached Running / Code 0. This directory retains
+the individual SCM installer (`qcscm`, `QCOM250B`). Startup does not
+validate every driver operation or GPU/power support.
 
-Source BSP: WOA-Project/windows_silicon_qcom_kona,
-commit 22221a09e02cb7054792427af60299b1c34d3c3e.
-The package includes only unchanged qcscm8250 INF/CAT/SYS, the original
-license and the public catalog certificate. No private signing key is used.
-SCM version: 1.0.2100.0000, ARM64. The catalog uses the WOA KMCI certificate.
+Базовые драйверы готовы. Следующий этап — ACPI-контракт и запуск Qualcomm PEP QCOM2519.
+See [docs/PEP.md](../../../docs/PEP.md). The normal firmware is built with
+`make stable` and `make verify`; it exposes all four foundation devices,
+without an active PEP device. GPU acceleration and Windows touch do not work.
+Shutdown/power management and OTG hot detach remain unstable; keyboard support
+on the latest profile is unconfirmed.
 
-The eventual graphics driver is qcdxkm8250.sys (27.20.2140.0000), matching
-QCOM253A. The available alioth DSDT uses an older QCOM2536 GPU node, older
-IDs for several dependencies, panel-specific methods, and firmware placeholders.
-Its GPU dependencies include MMU0/MMU1, IMM0/IMM1, PEP0, PMIC, PILC, RPEN,
-TREE and SCM0. Copying this DSDT or installing the entire BSP is not a tested
-munch port. Further ACPI, firmware and power work is required after SCM testing.
+## Source and ACPI
 
-## Device procedure
+Source BSP: [WOA-Project/windows_silicon_qcom_kona](https://github.com/WOA-Project/windows_silicon_qcom_kona),
+commit `22221a09e02cb7054792427af60299b1c34d3c3e`.
+The ARM64 driver version is 1.0.2100.0000. INF/CAT/SYS are copied unchanged,
+with the original BSP license and public WOA KMCI catalog certificate
+`946CF507369A80E65F2B58BEBF5D02CC159A484D`. No private signing key is used.
+The optional local BSP checkout is described in docs/PEP.md.
 
-1. Build with MUNCH_GPU_FOUNDATION=1 MUNCH_USB_ACPI=1 MUNCH_UFS_ACPI=1
-   using tools/build-munch.sh; pack with tools/pack-munch.py. The final image
-   was verified with tools/verify-munch.py --gpu-foundation --winpe
-   --usb-acpi --ufs-acpi --no-preboot-kbd.
-2. Generate the ZIP using python3 tools/prepare-kona-gpu-bootstrap.py.
-3. Install out/kona-gpu/munch-gpu-scm-bootstrap-twrp.zip in TWRP with ESP
-   unmounted. It verifies the device, geometry, GPT and package hashes, then
-   copies only its files into ESP/MUNCH/GPU23. It does not install a driver
-   or replace EFI/BCD files. A differing existing GPU23 folder stops installation.
-4. Boot out/munch-fresh/munch-uefi-windows23-scm.img with fastboot boot.
-5. In administrator CMD, run:
+The device has identification/status only. This is the SCM foundation, not
+an Adreno GPU device. GPU/SMMU, display and panel contracts need separate work.
 
-       mountvol S: /S
-       S:\MUNCH\GPU23\setup.cmd configure
+## Individual installation tool
 
-   Choose another unused drive letter if S: is already occupied. Configure
-   saves a BCD backup and previous certificate/testsigning state under
-   C:\munch-gpu, imports the included public certificate into machine Root
-   and TrustedPublisher, and enables test signing. This changes Windows
-   signing policy and takes effect at the next boot. It does not install SCM.
-6. Boot the same Windows23 image again. Run the following in administrator CMD:
+`python3 tools/prepare-kona-gpu-bootstrap.py --stage scm` creates
+`out/kona-gpu/munch-gpu-scm-bootstrap-twrp.zip`. Install only with the ESP
+unmounted; the recovery installer checks device, GPT, geometry and hashes,
+then copies to the legacy `ESP/MUNCH/GPU23` folder. It does not install a
+Windows driver or replace EFI/BCD. Differing existing files stop installation.
 
-       mountvol S: /S
-       S:\MUNCH\GPU23\setup.cmd install
+Follow the root [README boot sequence](../../../README.md): immediately remove
+the PC cable/VBUS after `fastboot boot` finishes, allow automatic Windows boot,
+then connect OTG mouse after the Windows logo. The diagnostic `fastboot oem
+windows` command is a fallback only.
 
-   This requires active test signing and exactly one SCM ACPI device. It
-   installs only qcscm8250.inf. Hardware status is recorded in
-   C:\munch-gpu\report.json. Code 0 would establish only SCM readiness,
-   not GPU readiness. No automatic reboot or shutdown is requested.
-7. Additional status: setup.cmd report. Normal rollback: setup.cmd rollback,
-   followed by booting the previous Windows22 image. Rollback removes only
-   the recorded SCM OEM INF and certificates added by configure, and restores
-   the previous effective test signing setting. A driver that crashes during
-   startup may require recovery/offline service removal; that is not automated.
-8. The existing read-only tools/collect-windows-setup-logs.py also retrieves
-   C:\munch-gpu reports while in TWRP.
+In administrator Windows, mount the ESP with `mountvol S: /S` (choose an unused
+letter) and run `S:\MUNCH\GPU23\setup.cmd` with `configure`, boot again, then
+`install`. Configure saves BCD and signing state, imports the public certificate
+into Root/TrustedPublisher and enables test signing. The next boot must have
+active test signing before installation.
 
-Host validation covers compilation, packaged ACPI checksums/namespace, unchanged
-vendor firmware modules, driver architecture, unchanged BSP files and ZIP
-integrity. Windows scripts and SCM behavior still require testing on the phone.
+`setup.cmd report` records status; `setup.cmd rollback` removes only an owned,
+unshared package. SCM rollback also restores signing settings it changed;
+other foundation packages leave prerequisite drivers/signing intact. No
+automatic shutdown or reboot is requested. Recovery/offline removal may be
+needed if Windows cannot boot. The read-only recovery log collector retrieves
+the install reports. These tools are optional and are not run by `make stable`.

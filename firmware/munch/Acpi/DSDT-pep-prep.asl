@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
-// Windows27: Kona-compatible CPU paths; existing USB/UFS resources retained.
+// PEP research preparation: CPU paths with existing USB/UFS resources retained.
 DefinitionBlock ("DSDT.aml", "DSDT", 2, "MUNCH ", "MUNCHCPU", 1)
 {
-    // Patched before boot from SMEM item 137; never pass the sentinel to Windows.
-    // Qualcomm qcpep scans DSDT for this Name(QWord), rather than evaluating AML.
-    Name (SOSI, 0xDEADBEEFFFFFFFFF)
     Scope (\_SB)
     {
         Device (XHC0)
