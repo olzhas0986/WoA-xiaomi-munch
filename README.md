@@ -37,8 +37,8 @@ In short (details in [docs/method.md](docs/method.md)):
 
 ## Quick start
 
-Requirements: `git`, `python3`, `dtc`, `clang`, `lld`, `llvm`, `iasl`,
-`nasm`, `make`, about 6 GB of disk space. `xbl.img` (or
+Requirements: `git`, `python3`, `mono`, `dtc`, `clang`, `lld`, `llvm`,
+`iasl`, `nasm`, `make`, about 6 GB of disk space. `xbl.img` (or
 `payload.bin`) and `munch-live.dtb` must be in the repository root.
 
 ```sh

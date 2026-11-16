@@ -17,6 +17,23 @@ The script checks the memory map and that the patches apply to your
 `xbl.img`. With a different XBL build it stops at the first byte mismatch -
 that is intended behaviour, not a failure.
 
+### Build dependencies
+
+Besides the compilers, edk2 needs **mono**: stuart runs NuGet through it to
+fetch `mu_nasm` and the BaseTools binaries. Without it the environment step
+fails with "Mono is required to run NuGet on non-Windows platforms".
+
+```sh
+# Arch / CachyOS
+sudo pacman -S --needed mono clang lld llvm dtc acpica nasm
+# Debian / Ubuntu
+sudo apt install mono-devel ca-certificates-mono clang lld llvm device-tree-compiler acpica-tools nasm
+```
+
+`scripts/build.sh` checks for these tools up front and runs stuart
+setup/update on every invocation, so a run that failed half-way recovers
+after the missing package is installed.
+
 Individual checks:
 
 ```sh
