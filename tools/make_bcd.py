@@ -2,8 +2,14 @@
 """Create a Windows BCD store on Linux, the way bcdboot does.
 
 Starts from BCD-Template shipped inside the Windows image
-(Windows/System32/config/BCD-Template), then adds the boot manager settings
-and one Windows loader entry with hivexregedit (package "hivex").
+(Windows/System32/config/BCD-Template), marks it as the system store, then
+adds the firmware and Windows boot manager settings and one Windows loader
+entry with hivexregedit (package "hivex").
+
+The template is not a system store: its root Description key has only an
+opaque KeyName. bcdboot sets KeyName "BCD00000000", System = 1 and
+TreatAsSystem = 1; without them the specialize pass of Windows setup fails
+in Sysprep_Specialize_Bcd with "File is not system store" (0xC0000098).
 
 Device elements use the qualified-partition encoding (88 bytes):
     0x00 associated GUID (zero)   0x10 device type = 6 (partition)
@@ -27,6 +33,7 @@ import tempfile
 import uuid
 
 BOOTMGR = "{9dea862c-5cdd-4e70-acc1-f32b344d4795}"
+FWBOOTMGR = "{a5a30fa2-3d06-4e9f-b5f4-a01df9d1fcba}"
 GLOBALSETTINGS = "{7ea2e1ac-2e61-4728-aaa3-896d9d0a9f0e}"
 BOOTLOADERSETTINGS = "{6efb52bf-1766-41db-a6b3-0ee5eff72bd7}"
 
@@ -190,6 +197,10 @@ def reg_value(name, vtype, data):
 def build(template, out, disk, esp, win, description, locale, timeout):
     loader = "{" + str(uuid.uuid4()) + "}"
     objects = {
+        FWBOOTMGR: (0x10100001, {
+            0x24000001: guid_list([BOOTMGR]),
+            0x25000004: integer(0),
+        }),
         BOOTMGR: (0x10100002, {
             0x11000001: device(disk, esp),
             0x12000002: string(r"\EFI\Microsoft\Boot\bootmgfw.efi"),
@@ -218,7 +229,11 @@ def build(template, out, disk, esp, win, description, locale, timeout):
             0x250000e0: integer(1),       # bootstatuspolicy IgnoreAllFailures
         }),
     }
-    lines = ["Windows Registry Editor Version 5.00", ""]
+    lines = ["Windows Registry Editor Version 5.00", "",
+             r"[HKEY_LOCAL_MACHINE\BCD\Description]",
+             reg_value("KeyName", REG_SZ, string("BCD00000000")[1]),
+             reg_value("System", REG_DWORD, struct.pack("<I", 1)),
+             reg_value("TreatAsSystem", REG_DWORD, struct.pack("<I", 1)), ""]
     for obj, (otype, elems) in objects.items():
         base = rf"HKEY_LOCAL_MACHINE\BCD\Objects\{obj}"
         lines += [f"[{base}]", "", f"[{base}\\Description]",
@@ -242,10 +257,19 @@ def build(template, out, disk, esp, win, description, locale, timeout):
 
 
 def verify(path, disk, esp, win, loader):
-    result = dump(Hive(open(path, "rb").read()))
+    hive = Hive(open(path, "rb").read())
+    result = dump(hive)
     lower = {k.lower(): v for k, v in result.items()}
     bm, ld = lower.get(BOOTMGR), lower.get(loader.lower())
     errors = []
+    desc = hive.values(hive.path("Description"))
+    for name in ("system", "treatassystem"):
+        if desc.get(name) != (REG_DWORD, struct.pack("<I", 1)):
+            errors.append(f"Description\\{name} is not 1: not a system store")
+    if desc.get("keyname", (0, b""))[1].decode("utf-16le", "replace").rstrip("\0") != "BCD00000000":
+        errors.append("Description\\KeyName is not BCD00000000")
+    if FWBOOTMGR not in lower:
+        errors.append("firmware boot manager object missing")
     if not bm or not ld:
         errors.append("boot manager or loader object missing")
     else:

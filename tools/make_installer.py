@@ -17,6 +17,10 @@ Outputs (in -o, default out/installer):
   win-install-munch-dryrun.zip   same content, only runs the checks
   layout.txt                     what will be written where
 
+--reuse takes the partition GUIDs from a zip built earlier. Use it to fix an
+installation: the phone already has partitions with those GUIDs, so the new
+zip resumes on them (reformat and reapply) instead of refusing.
+
 Example:
     make_installer.py --gpt out/sda-gpt.bin --target arch_boot --target arch_root
 """
@@ -120,11 +124,22 @@ def main():
     ap.add_argument("--win", default=os.path.join(ROOT, "out/win"))
     ap.add_argument("--tools", default=os.path.join(ROOT, "out/recovery-tools/bin"))
     ap.add_argument("-o", "--out", default=os.path.join(ROOT, "out/installer"))
+    ap.add_argument("--reuse", metavar="ZIP", help="take partition GUIDs from an earlier zip")
     args = ap.parse_args()
 
     gpt = gpt_read.parse(open(args.gpt, "rb").read())
     targets = pick_targets(gpt, args.target)
     conf = layout(gpt, targets)
+    if args.reuse:
+        with zipfile.ZipFile(args.reuse) as z:
+            old = dict(line.split("=", 1) for line in z.read("install.conf").decode().splitlines()
+                       if "=" in line and not line.startswith("#"))
+        old = {k: v.strip("'") for k, v in old.items()}
+        for k, v in conf.items():
+            if not k.endswith("_UUID") and str(v) != old.get(k):
+                sys.exit(f"--reuse: {k} differs ({old.get(k)} vs {v}); not the same layout")
+        for k in ("ESP_UUID", "MSR_UUID", "WIN_UUID"):
+            conf[k] = old[k]
     esd = os.path.join(args.win, "install.esd")
     for path in (esd, os.path.join(args.win, "BCD-Template"),
                  os.path.join(args.win, "esp/EFI/Boot/bootaa64.efi")):

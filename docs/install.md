@@ -140,6 +140,14 @@ Windows (NTFS, the rest). Nothing else on the disk is touched.
 
 `/sdcard` must be readable in recovery, i.e. `/data` must be decrypted.
 
+If Windows setup fails, pull its logs from recovery with `tools/win_logs.sh`
+(read-only). To reinstall over the same partitions, rebuild the zip with the
+GUIDs of the one that created them, so it resumes instead of refusing:
+
+```sh
+tools/make_installer.py --gpt out/sda-gpt.bin --target <name> ... --reuse <old zip>
+```
+
 Then boot UEFI again:
 
 ```sh
