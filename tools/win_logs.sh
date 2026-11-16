@@ -2,7 +2,7 @@
 # Pull Windows setup/boot logs and the SYSTEM hive from the phone, read-only,
 # over adb in recovery.
 #
-#   tools/win_logs.sh [partition number, default 36] [-o out/win-logs]
+#   tools/win_logs.sh [Windows partition number, default 36] [-o out/win-logs]
 #
 # The recovery kernel has no NTFS driver, so static ntfscat/ntfsls are pushed
 # to /tmp and read the volume directly; nothing is mounted or written.
@@ -48,6 +48,21 @@ for f in "${FILES[@]}"; do
   else
     rm -f "$OUT/$name"
   fi
+done
+# whole directories: crash dumps, PEP test state and traces
+DIRS=(/Windows/Minidump /munch-gpu-pep-lmh /munch-gpu-pep-core /Windows/System32/LogFiles/WMI)
+for d in "${DIRS[@]}"; do
+  sub="$OUT/$(echo "${d#/}" | tr '/' '_')"
+  names="$(adb exec-out "/tmp/ntfsls -f -F $DEV -p '$d' 2>/dev/null" | tr -d '\r')" || continue
+  [[ -n "$names" ]] || continue
+  mkdir -p "$sub"
+  while IFS= read -r n; do
+    case "$n" in */|.|..|'') continue ;; esac
+    # WMI holds every autologger; keep only ETL files that look PEP-related
+    if [[ "$d" == */WMI ]]; then case "$n" in *[Pp][Ee][Pp]*|*munch*|*Munch*) ;; *) continue ;; esac; fi
+    adb exec-out "/tmp/ntfscat -f $DEV '$d/$n' 2>/dev/null" > "$sub/$n"
+    printf '%-48s %8d bytes\n' "$d/$n" "$(stat -c %s "$sub/$n")"
+  done <<< "$names"
 done
 adb exec-out "/tmp/ntfsls -f -l $DEV -p /Windows/Panther 2>&1" > "$OUT/panther-listing.txt" || true
 adb exec-out "/tmp/ntfsls -f -l $DEV -p /Windows/Minidump 2>&1" > "$OUT/minidump-listing.txt" || true
