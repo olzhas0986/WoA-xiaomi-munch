@@ -1,0 +1,91 @@
+--- a/firmware/munch/Acpi/SSDT-GPU-PEP.asl
++++ b/firmware/munch/Acpi/SSDT-GPU-PEP.asl
+@@ -172,7 +172,87 @@
+             // Native reference defaults for optional initial queries.
+             Method (PGDS, 0, NotSerialized) { Return (Zero) }
+             Method (FPMD, 0, NotSerialized) { Return (Zero) }
+-            Method (PPRR, 0, NotSerialized) { Return (Package () {}) }
++            // PPRR: triples of range class, first and last resource ID.
++            Name (PRRP, Package (0x1B)
++            {
++                "PPP_RESOURCE_RANGE_INFO_SMPS_A", "PPP_RESOURCE_ID_SMPS1_A", "PPP_RESOURCE_ID_SMPS10_A",
++                "PPP_RESOURCE_RANGE_INFO_SMPS_C", "PPP_RESOURCE_ID_SMPS1_C", "PPP_RESOURCE_ID_SMPS8_C",
++                "PPP_RESOURCE_RANGE_INFO_LDO_A", "PPP_RESOURCE_ID_LDO1_A", "PPP_RESOURCE_ID_LDO18_A",
++                "PPP_RESOURCE_RANGE_INFO_LDO_C", "PPP_RESOURCE_ID_LDO1_C", "PPP_RESOURCE_ID_LDO11_C",
++                "PPP_RESOURCE_RANGE_INFO_CXO_BUFFERS_A", "PPP_RESOURCE_ID_CXO_BUFFERS_BBCLK1_A", "PPP_RESOURCE_ID_CXO_BUFFERS_DIVCLK2_A",
++                "PPP_RESOURCE_RANGE_INFO_CXO_BUFFERS_C", "PPP_RESOURCE_ID_CXO_BUFFERS_DIVCLK1_C", "PPP_RESOURCE_ID_CXO_BUFFERS_DIVCLK1_C",
++                "PPP_RESOURCE_RANGE_INFO_BUCK_BOOST_C", "PPP_RESOURCE_ID_BUCK_BOOST1_C", "PPP_RESOURCE_ID_BUCK_BOOST1_C",
++                "PPP_RESOURCE_RANGE_INFO_PMIC_GPIO_DV", "PPP_RESOURCE_ID_PMIC_GPIO_DV1", "PPP_RESOURCE_ID_PMIC_GPIO_DV3",
++                "PPP_RESOURCE_RANGE_INFO_TLMM_GPIO_DV", "PPP_RESOURCE_ID_TLMM_GPIO_DV1", "PPP_RESOURCE_ID_TLMM_GPIO_DV3"
++            })
++            Method (PPRR, 0, NotSerialized) { Return (PRRP) }
++            // InitializePppFramework (qcpep RVA 0x115288) evaluates PPPM, then PPRR.
++            // PPPM missing -> STATUS_OBJECT_NAME_NOT_FOUND; PPRR empty ->
++            // STATUS_ACPI_INVALID_DATA (both end in bugcheck 0x14E). Both lists are
++            // taken from the Qualcomm SDM8250 DSDT of Xiaomi pipa (SM8250-AC, same
++            // PM8150/PM8150B/PM8150L set), written for this newer PEP generation;
++            // every name was checked against the driver's resource tables.
++            Name (PPPP, Package (0x39)
++            {
++                Package (0x01) { "PPP_RESOURCE_ID_SMPS1_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_SMPS2_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_SMPS3_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_SMPS4_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_SMPS5_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_SMPS6_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_SMPS1_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_SMPS2_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_SMPS4_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_SMPS5_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_SMPS6_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_SMPS8_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO1_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO2_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO3_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO4_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO5_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO6_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO7_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO8_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO9_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO10_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO11_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO12_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO13_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO14_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO15_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO16_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO17_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO18_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO1_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO2_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO3_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO4_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO5_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO6_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO7_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO8_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO9_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO10_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_LDO11_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_CXO_BUFFERS_BBCLK1_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_CXO_BUFFERS_BBCLK2_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_CXO_BUFFERS_BBCLK3_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_CXO_BUFFERS_RFCLK1_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_CXO_BUFFERS_RFCLK2_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_CXO_BUFFERS_RFCLK3_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_CXO_BUFFERS_DIVCLK1_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_CXO_BUFFERS_DIVCLK2_A" },
++                Package (0x01) { "PPP_RESOURCE_ID_CXO_BUFFERS_DIVCLK1_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_BUCK_BOOST1_C" },
++                Package (0x01) { "PPP_RESOURCE_ID_PMIC_GPIO_DV1" },
++                Package (0x01) { "PPP_RESOURCE_ID_PMIC_GPIO_DV2" },
++                Package (0x01) { "PPP_RESOURCE_ID_PMIC_GPIO_DV3" },
++                Package (0x01) { "PPP_RESOURCE_ID_TLMM_GPIO_DV1" },
++                Package (0x01) { "PPP_RESOURCE_ID_TLMM_GPIO_DV2" },
++                Package (0x01) { "PPP_RESOURCE_ID_TLMM_GPIO_DV3" }
++            })
++            Method (PPPM, 0, NotSerialized) { Return (PPPP) }
+         }
+     }
+ }

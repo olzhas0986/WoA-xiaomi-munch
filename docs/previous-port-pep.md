@@ -107,3 +107,18 @@ this driver build contains. Firmware built from the previous port with that
 patch (`MUNCH_GPU_FOUNDATION=6 MUNCH_USB_ACPI=1 MUNCH_UFS_ACPI=1`):
 `out/munch-uefi-windows32-pppm.img`. The unchanged rebuild reproduces the
 windows31 DSDT and SSDT hashes, so the patch is the only ACPI difference.
+
+## Result 2: PPPM present, PPRR empty
+
+The same 0x14E stop, now with status `0xC014000F`
+(STATUS_ACPI_INVALID_DATA). `InitializePppFramework` evaluates `PPRR` after
+`PPPM`; the PPRR parser (RVA 0x117C78) rejects an empty package with that
+status. PPRR is a flat list of triples: a `PPP_RESOURCE_RANGE_INFO_*` class
+(36 known to the driver) and the first and last `PPP_RESOURCE_ID_*` of
+that class.
+
+The Xiaomi pipa DSDT in Silicium-ACPI (SM8250-AC, same PMIC set) is
+written for this newer PEP generation (it has CTPM and PEPH) and carries
+both lists. The patch, renamed `0001-ssdt-pep-ppp-framework.patch`, now uses
+its PPPP (57 resources) and PRRP (9 triples), every name checked against
+the driver's tables. Firmware: `out/munch-uefi-windows33-pprr.img`.
