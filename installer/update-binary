@@ -112,11 +112,13 @@ for n in $TARGET_NRS $ESP_NR $MSR_NR $WIN_NR; do
 done
 
 ESD=""
-for p in /sdcard/install.esd /sdcard/Download/install.esd /data/media/0/install.esd \
+# USB flash drive over OTG first (TWRP mounts it at /usb_otg), then internal storage
+for p in /usb_otg/install.esd /usb-otg/install.esd /usbstorage/install.esd \
+         /sdcard/install.esd /sdcard/Download/install.esd /data/media/0/install.esd \
          /data/media/0/Download/install.esd; do
   [ -f "$p" ] && { ESD="$p"; break; }
 done
-[ -n "$ESD" ] || abort "install.esd not found in /sdcard or /sdcard/Download (is /data decrypted?)"
+[ -n "$ESD" ] || abort "install.esd not found on the USB drive (mount USB-OTG in recovery) or in /sdcard"
 [ "$(stat -c %s "$ESD")" = "$ESD_SIZE" ] || abort "$ESD has the wrong size (incomplete adb push?)"
 run wimlib-imagex info "$ESD" 1 || abort "$ESD is not readable by wimlib"
 ui_print "Image: $ESD"

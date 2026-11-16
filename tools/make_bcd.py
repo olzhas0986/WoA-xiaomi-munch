@@ -209,6 +209,8 @@ def build(template, out, disk, esp, win, description, locale, timeout):
             0x16000009: boolean(False),   # recoveryenabled: WinRE has no drivers here
             0x16000048: boolean(True),    # nointegritychecks
             0x16000049: boolean(True),    # testsigning: device drivers are not WHQL
+            0x16000060: boolean(True),    # isolatedcontext, as in the template loader
+            0x17000077: (REG_BINARY, struct.pack("<Q", 0x15000075)),  # allowedinmemorysettings
             0x21000001: device(disk, win),
             0x22000002: string(r"\Windows"),
             0x25000020: integer(0),       # nx OptIn

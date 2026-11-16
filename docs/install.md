@@ -123,6 +123,10 @@ Windows (NTFS, the rest). Nothing else on the disk is touched.
    adb push out/installer/win-install-munch-dryrun.zip /sdcard/
    ```
 
+   Instead of `adb push`, the files can go on a USB flash drive (FAT32 or
+   exFAT) connected over OTG: the installer looks for `install.esd` in
+   `/usb_otg` first. Mount USB-OTG in the recovery before flashing.
+
    Flash `win-install-munch-dryrun.zip` from recovery. It checks the tools,
    the disk GUID, the target partition (number, name, GUID, start, size), that
    nothing is mounted on it and that `install.esd` is complete - and writes
