@@ -11,8 +11,9 @@ together with the tools used to derive it from the device's own firmware.
 | Analysis of `payload.bin`, XBL, DTB | done, reproducible with the tools in `tools/` |
 | `Binaries/munch` tree (91 XBL modules, 6 patches) | generated, patches verified byte-for-byte against alioth |
 | `munchPkg` package for Mu-Silicium | written, static checks pass |
-| `Mu-munch-0.img` build | **not built yet** - run `scripts/build.sh` |
-| Boot on the device | **not tested** |
+| `Mu-munch-0.img` build | builds with `scripts/build.sh` |
+| UEFI on the device | boots via `fastboot boot`; with no OS installed it reboots |
+| Windows installer (recovery zip) | written, not yet run on the device |
 | Windows drivers | no ready-made pack for Xiaomi SM8250, see [docs/drivers.md](docs/drivers.md) |
 
 Nothing from this repository has been flashed to a phone yet. The first run
@@ -57,11 +58,18 @@ tools/make_binaries.py     XBL -> Binaries/munch + patches + RAW.inc
 tools/prepare_dtb.py       live DTB -> DTB for the boot image
 tools/check_memmap.py      check the memory map against the XBL and DTB
 tools/check_port.py        static consistency check of the port
+tools/gpt_read.py          decode the GPT from a raw dump of sda
+tools/prepare_image.sh     Windows ISO -> install.esd + boot files + BCD-Template
+tools/make_bcd.py          create and verify a BCD store on Linux
+tools/make_installer.py    build the recovery installer zip
+installer/update-binary    recovery script: repartition, format, apply, boot files
+port/windows/unattend.xml  answer file that skips OOBE
 port/munchPkg/             platform package for Mu-Silicium
 port/patches.toml          binary patches for XBL drivers
 port/binaries-map.tsv      GUID -> Binaries layout mapping
 port/Resources/            boot image configuration
 scripts/build.sh           end-to-end build
+scripts/build_recovery_tools.sh  static aarch64 sfdisk/partx/mkntfs/wimlib/mkfs.fat
 dts/munch.dts              device tree (reference)
 docs/                      method, hardware, install, drivers, firmware analysis
 firmware/SHA256SUMS        checksums of the input files
