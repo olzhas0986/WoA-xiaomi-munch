@@ -7,8 +7,13 @@ msm-id/board-id that ABL uses to pick a tree. This tool strips per-unit data
 from such a snapshot (serial number, cpuid, panel calibration in bootargs);
 ABL rewrites /chosen on every boot anyway.
 
-Example:
+Fallback (--raw): append the base DTBs from vendor_boot unchanged, so ABL
+gets the same input as on a normal Android boot and applies the overlay from
+the dtbo partition itself.
+
+Examples:
     prepare_dtb.py munch-live.dtb -o out/munch.dtb --dts dts/munch.dts
+    prepare_dtb.py out/vboot/dtb -o out/munch.dtb --raw
 """
 import argparse
 import re
@@ -25,7 +30,18 @@ def main():
     ap.add_argument("dtb")
     ap.add_argument("-o", "--out", required=True)
     ap.add_argument("--dts", help="also write the cleaned-up source")
+    ap.add_argument("--raw", action="store_true",
+                    help="copy as is (set of base DTBs from vendor_boot)")
     args = ap.parse_args()
+
+    if args.raw:
+        data = open(args.dtb, "rb").read()
+        if data[:4] != b"\xd0\x0d\xfe\xed":
+            sys.exit("not a DTB")
+        with open(args.out, "wb") as f:
+            f.write(data)
+        print(f"{args.out}: copied unchanged")
+        return
 
     res = subprocess.run(["dtc", "-q", "-I", "dtb", "-O", "dts", args.dtb],
                          capture_output=True, text=True)

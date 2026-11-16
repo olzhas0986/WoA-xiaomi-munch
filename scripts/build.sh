@@ -2,7 +2,7 @@
 # Build the UEFI boot.img for POCO F4 / Redmi K40S (munch) on top of Mu-Silicium.
 #
 #   scripts/build.sh [--xbl xbl.img | --payload payload.bin]
-#                    [--dtb munch-live.dtb]
+#                    [--dtb munch-live.dtb | --raw-dtb vendor_boot.dtb]
 #                    [--model 0|1] [--debug]
 #
 # Steps:
@@ -21,12 +21,13 @@ WORK="$ROOT/work"
 MU="$WORK/Mu-Silicium"
 OUT="$ROOT/out"
 
-XBL="" PAYLOAD="" DTB="$ROOT/munch-live.dtb" MODEL=0 MODE=RELEASE
+XBL="" PAYLOAD="" DTB="$ROOT/munch-live.dtb" DTB_RAW="" MODEL=0 MODE=RELEASE
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --xbl)     XBL="$2"; shift 2 ;;
     --payload) PAYLOAD="$2"; shift 2 ;;
     --dtb)     DTB="$2"; shift 2 ;;
+    --raw-dtb) DTB="$2"; DTB_RAW="--raw"; shift 2 ;;
     --model)   MODEL="$2"; shift 2 ;;
     --debug)   MODE=DEBUG; shift ;;
     -h|--help) awk 'NR>1 && /^#/ {sub(/^# ?/, ""); print; next} NR>1 {exit}' "$0"; exit 0 ;;
@@ -69,14 +70,19 @@ if ! cmp -s "$OUT/RAW.inc" "$ROOT/port/munchPkg/Include/RAW.inc"; then
   echo "RAW.inc from this XBL differs from the committed one - different firmware?" >&2
   exit 1
 fi
-python3 -I "$ROOT/tools/check_memmap.py" \
-        --cfg "$OUT/xbl-fv/uefiplat.cfg/uefiplat.cfg.raw" --dtb "$DTB" | tail -1
+if [[ -z "$DTB_RAW" ]]; then
+  python3 -I "$ROOT/tools/check_memmap.py" \
+          --cfg "$OUT/xbl-fv/uefiplat.cfg/uefiplat.cfg.raw" --dtb "$DTB" | tail -1
+else
+  python3 -I "$ROOT/tools/check_memmap.py" \
+          --cfg "$OUT/xbl-fv/uefiplat.cfg/uefiplat.cfg.raw" | tail -1
+fi
 
 echo "==> overlaying the port"
 rm -rf "$MU/Platforms/Xiaomi/munchPkg"
 cp -r "$ROOT/port/munchPkg" "$MU/Platforms/Xiaomi/munchPkg"
 cp "$ROOT/port/Resources/Configs/munch.toml" "$MU/Resources/Configs/munch.toml"
-python3 -I "$ROOT/tools/prepare_dtb.py" "$DTB" -o "$MU/Resources/DTBs/munch.dtb"
+python3 -I "$ROOT/tools/prepare_dtb.py" "$DTB" -o "$MU/Resources/DTBs/munch.dtb" $DTB_RAW
 
 echo "==> Python environment"
 if [[ ! -x "$WORK/venv/bin/python" ]]; then
