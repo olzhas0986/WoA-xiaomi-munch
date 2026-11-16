@@ -74,64 +74,89 @@ unpack_bootimg --boot_img out/crdroid/vendor_boot.img --out out/vboot
 
 Only continue after a successful trial boot.
 
-## 3. Partitioning
+## 3. Windows payload on the PC
 
-Before partitioning, back up the partitions that cannot be restored from
-firmware: `persist`, `modemst1`, `modemst2`, `fsg`, `fsc`.
+Needs `wimlib`, `hivex` and `7z` (Arch: `sudo pacman -S --needed wimlib hivex 7zip`).
 
-Windows needs two partitions at the end of `sda`: ESP (FAT32, 512 MB) and the
-main one (NTFS, 64 GB or more). The space is taken from `userdata`, which is
-the last partition on the disk.
-
-From recovery with `parted` (take numbers and boundaries from `print`, they
-depend on the storage size):
-
-```
-parted /dev/block/sda
-(parted) print
-(parted) rm <userdata number>
-(parted) mkpart userdata ext4 <userdata start> <new end>
-(parted) mkpart esp fat32 <new end> <new end + 512MB>
-(parted) mkpart win ntfs <new end + 512MB> 100%
-(parted) set <esp number> esp on
-(parted) quit
+```sh
+tools/prepare_image.sh en-us_windows_11_iot_enterprise_ltsc_2024_arm64_dvd_ec517836.iso
+scripts/build_recovery_tools.sh
 ```
 
-After rebooting into recovery, format `userdata` with recovery (Format Data)
-and `esp` as FAT32. NTFS is created by the Windows tooling in the next step.
+`prepare_image.sh` keeps only the IoT Enterprise LTSC edition, adds
+`port/windows/unattend.xml` (local administrator `user` without a password,
+automatic logon - there is no touch or USB to get through OOBE otherwise) and
+writes a solid `out/win/install.esd` of about 3 GB, plus the boot manager files
+and `BCD-Template` taken from the same image.
 
-Do not touch anything except `userdata` and the two new partitions: the other
-`sda` partitions and all other LUNs (`sdb`...`sdf`) hold the bootloader and
-calibration data.
+Device drivers cannot be injected offline from Linux (that needs `dism`); see
+[drivers.md](drivers.md) for what exists and how to add it.
 
-## 4. Deploying Windows
+## 4. Installer zip
 
-Boot UEFI (`fastboot boot`), choose Mass Storage in the menu and connect the
-phone to a PC: UFS shows up as a regular disk (thanks to the `UsbMsdDxe`
-patch).
+The installer replaces one spare partition on `sda` - for example the one
+previously used for Arch - with three: ESP (FAT32, 512 MiB), MSR (16 MiB) and
+Windows (NTFS, the rest). Nothing else on the disk is touched.
 
-On a Windows PC (or a VM with USB passthrough), as administrator. Assign
-letters in `diskpart` (`select volume` / `assign`; for the NTFS partition run
-`format quick fs=ntfs` first):
+1. Boot the phone into recovery and dump the start of the disk (read-only):
+
+   ```sh
+   adb exec-out "dd if=/dev/block/sda bs=4096 count=6 2>/dev/null" > out/sda-gpt.bin
+   tools/gpt_read.py out/sda-gpt.bin
+   ```
+
+2. Build the zip for the spare partition (by name or number):
+
+   ```sh
+   tools/make_installer.py --gpt out/sda-gpt.bin --target <name>
+   cat out/installer/layout.txt
+   ```
+
+   It refuses partitions with stock Android names or vendor type GUIDs and
+   anything outside 20-128 GiB. Partition GUIDs are generated here and written
+   into both the BCD and the zip, which is why the BCD can be made on Linux.
+
+3. Copy the image and run the dry run first:
+
+   ```sh
+   adb push out/win/install.esd /sdcard/
+   adb push out/installer/win-install-munch-dryrun.zip /sdcard/
+   ```
+
+   Flash `win-install-munch-dryrun.zip` from recovery. It checks the tools,
+   the disk GUID, the target partition (number, name, GUID, start, size), that
+   nothing is mounted on it and that `install.esd` is complete - and writes
+   nothing.
+
+4. Flash `win-install-munch.zip`. It backs up the partition table to
+   `/sdcard/win-install/`, repartitions, formats, applies the image (20-40
+   minutes) and copies the boot manager and BCD to the ESP. If it stops after
+   repartitioning, reboot recovery and flash it again: it detects the new
+   layout and continues.
+
+`/sdcard` must be readable in recovery, i.e. `/data` must be decrypted.
+
+Then boot UEFI again:
+
+```sh
+fastboot boot out/Mu-munch-0.img
+```
+
+Mu-Silicium finds `\EFI\Boot\bootaa64.efi` on the ESP and starts the Windows
+boot manager. The first boot runs the specialize pass and reboots once.
+
+### Alternative: from a Windows PC
+
+With UEFI booted, choose Mass Storage in its menu; the whole UFS shows up on
+the PC (the `UsbMsdDxe` patch makes it a fixed disk). Create the partitions in
+`diskpart`, then:
 
 ```bat
-dism /Get-ImageInfo /ImageFile:D:\sources\install.wim
 dism /Apply-Image /ImageFile:D:\sources\install.wim /Index:<N> /ApplyDir:W:\
 bcdboot W:\Windows /s S: /f UEFI
 bcdedit /store S:\EFI\Microsoft\Boot\BCD /set {default} testsigning on
 bcdedit /store S:\EFI\Microsoft\Boot\BCD /set {default} nointegritychecks on
-bcdedit /store S:\EFI\Microsoft\Boot\BCD /set {default} recoveryenabled no
 ```
-
-`D:` is the mounted ISO, `W:` the `win` partition, `S:` the `esp`.
-`testsigning` is needed for device drivers not signed by Microsoft.
-
-The image can be applied from Linux alone (`wimlib-imagex apply`), but the BCD
-store is properly created only by `bcdboot`, so this step is easier on
-Windows.
-
-Drivers are added to the applied image before the first boot - see
-[drivers.md](drivers.md).
 
 ## 5. Persistent boot
 
@@ -153,7 +178,9 @@ adb pull /sdcard/boot_a.img && adb pull /sdcard/boot_b.img
 
 ## Rollback
 
-- After steps 1-2 there is nothing to roll back.
-- After partitioning: delete `esp` and `win`, restore `userdata` to its
-  original size, format it.
+- After steps 1-3 there is nothing to roll back.
+- After the installer zip: the original table is in
+  `/sdcard/win-install/sda-before.sfdisk`; restore it from recovery with
+  `sfdisk /dev/block/sda < sda-before.sfdisk` (the static `sfdisk` is inside
+  the zip under `bin/`).
 - After flashing `boot`: flash the saved image back via fastboot.
