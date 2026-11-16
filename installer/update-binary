@@ -1,0 +1,194 @@
+#!/sbin/sh
+# Windows installer for POCO F4 / Redmi K40S (munch), run by the recovery.
+#
+# Replaces one spare partition on sda (selected when the zip was built)
+# with ESP + MSR + Windows, formats them, applies install.esd onto the
+# Windows partition and puts the boot manager and BCD on the ESP.
+#
+# Every value it touches (disk GUID, partition number, name, GUID, start,
+# size) was captured from this phone when the zip was built; on any mismatch
+# it stops before writing. A zip whose name contains "dryrun" only checks.
+#
+# Arguments (recovery API): <api> <outfd> <zip>
+
+OUTFD="$2"
+ZIP="$3"
+W=/tmp/win-install
+LOG=/tmp/win-install.log
+
+ui_print() {
+  if [ -n "$OUTFD" ] && [ -e "/proc/self/fd/$OUTFD" ]; then
+    printf 'ui_print %s\nui_print\n' "$*" > "/proc/self/fd/$OUTFD"
+  else
+    echo "$*"
+  fi
+  echo "$*" >> "$LOG"
+}
+
+abort() {
+  ui_print "ERROR: $*"
+  ui_print "Nothing after this point was done. Log: $LOG"
+  [ -d /sdcard/win-install ] && cp "$LOG" /sdcard/win-install/ 2>/dev/null
+  exit 1
+}
+
+run() {
+  echo "+ $*" >> "$LOG"
+  "$@" >> "$LOG" 2>&1
+}
+
+: > "$LOG"
+ui_print "Windows 11 installer for munch"
+rm -rf "$W" && mkdir -p "$W" || abort "cannot create $W"
+cd "$W" && unzip -oq "$ZIP" || abort "cannot unpack the zip"
+chmod 755 bin/* || abort "tools missing in the zip"
+export PATH="$W/bin:$PATH"
+. ./install.conf || abort "install.conf missing"
+
+DRYRUN=0
+case "$(basename "$ZIP")" in *dryrun*) DRYRUN=1 ;; esac
+[ "$DRYRUN" = 1 ] && ui_print "DRY RUN: checks only, nothing will be written"
+
+DISK=/dev/block/sda
+SYSB=/sys/class/block
+
+# ---------------------------------------------------------------- checks
+
+for tool in sfdisk partx mkfs.fat mkntfs wimlib-imagex; do
+  run "$tool" --version || run "$tool" -V || abort "$tool does not run here"
+done
+
+DEVICE="$(getprop ro.product.device 2>/dev/null)"
+case "$DEVICE" in
+  *munch*|"") ;;
+  *) abort "this zip is for munch, the recovery reports '$DEVICE'" ;;
+esac
+
+[ -b "$DISK" ] || abort "$DISK not found"
+SS="$(cat /sys/block/sda/queue/logical_block_size)"
+[ "$SS" = "$SECTOR_SIZE" ] || abort "sector size $SS, expected $SECTOR_SIZE"
+GUID="$(sfdisk --disk-id "$DISK" 2>>"$LOG")"
+[ "$GUID" = "$DISK_GUID" ] || abort "disk GUID $GUID does not match this zip ($DISK_GUID)"
+
+# start/size of partition N in logical sectors, from sysfs (512-byte units)
+part_geom() {
+  [ -e "$SYSB/sda$1/start" ] || { echo "- -"; return; }
+  echo "$(( $(cat "$SYSB/sda$1/start") * 512 / SS )) $(( $(cat "$SYSB/sda$1/size") * 512 / SS ))"
+}
+part_uuid() { sfdisk --part-uuid "$DISK" "$1" 2>/dev/null; }
+part_name() { sfdisk --part-label "$DISK" "$1" 2>/dev/null; }
+
+STATE=""
+if [ "$(part_uuid "$TARGET_NR")" = "$TARGET_UUID" ]; then
+  [ "$(part_name "$TARGET_NR")" = "$TARGET_NAME" ] || abort "partition $TARGET_NR is not '$TARGET_NAME'"
+  [ "$(part_geom "$TARGET_NR")" = "$TARGET_START $TARGET_SIZE" ] ||
+    abort "partition $TARGET_NR geometry changed since the zip was built"
+  for n in $MSR_NR $WIN_NR; do
+    [ -z "$(part_uuid "$n")" ] || abort "partition number $n is already in use"
+  done
+  STATE=fresh
+elif [ "$(part_uuid "$ESP_NR")" = "$ESP_UUID" ] && [ "$(part_uuid "$WIN_NR")" = "$WIN_UUID" ]; then
+  STATE=partitioned
+else
+  abort "partition $TARGET_NR is neither '$TARGET_NAME' nor an earlier run of this zip"
+fi
+ui_print "Target: sda$TARGET_NR '$TARGET_NAME' ($((TARGET_SIZE * SS / 1048576)) MiB), state: $STATE"
+
+for n in $TARGET_NR $MSR_NR $WIN_NR; do
+  if grep -q "^/dev/block/sda$n " /proc/mounts || grep -q "^/dev/block/sda$n " /proc/swaps; then
+    abort "/dev/block/sda$n is mounted, unmount it first"
+  fi
+done
+
+ESD=""
+for p in /sdcard/install.esd /sdcard/Download/install.esd /data/media/0/install.esd \
+         /data/media/0/Download/install.esd; do
+  [ -f "$p" ] && { ESD="$p"; break; }
+done
+[ -n "$ESD" ] || abort "install.esd not found in /sdcard or /sdcard/Download (is /data decrypted?)"
+[ "$(stat -c %s "$ESD")" = "$ESD_SIZE" ] || abort "$ESD has the wrong size (incomplete adb push?)"
+run wimlib-imagex info "$ESD" 1 || abort "$ESD is not readable by wimlib"
+ui_print "Image: $ESD"
+
+if [ "$DRYRUN" = 1 ]; then
+  ui_print "All checks passed. Flash the zip without 'dryrun' in its name to install."
+  exit 0
+fi
+
+# ---------------------------------------------------------------- partitioning
+
+wait_node() {
+  i=0
+  while [ ! -b "/dev/block/sda$1" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+  if [ ! -b "/dev/block/sda$1" ] && [ -e "$SYSB/sda$1/dev" ]; then
+    mknod "/dev/block/sda$1" b $(tr ':' ' ' < "$SYSB/sda$1/dev")
+  fi
+  [ -b "/dev/block/sda$1" ]
+}
+
+if [ "$STATE" = fresh ]; then
+  mkdir -p /sdcard/win-install
+  run sfdisk --dump "$DISK"
+  sfdisk --dump "$DISK" > /sdcard/win-install/sda-before.sfdisk 2>>"$LOG" ||
+    abort "cannot back up the partition table"
+  run dd if="$DISK" of=/sdcard/win-install/sda-gpt-primary.bin bs="$SS" count=6 ||
+    abort "cannot back up the GPT"
+  ui_print "Partition table backed up to /sdcard/win-install"
+
+  ui_print "Repartitioning sda$TARGET_NR -> ESP, MSR, Windows"
+  echo "start=$ESP_START, size=$ESP_SIZE, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=$ESP_UUID, name=esp" |
+    run sfdisk --no-reread --no-tell-kernel --wipe-partitions never -N "$ESP_NR" "$DISK" ||
+    abort "sfdisk failed on sda$ESP_NR (table unchanged)"
+  printf '%s\n%s\n' \
+    "$DISK$MSR_NR : start=$MSR_START, size=$MSR_SIZE, type=E3C9E316-0B5C-4DB8-817D-F92DF00215AE, uuid=$MSR_UUID, name=msr" \
+    "$DISK$WIN_NR : start=$WIN_START, size=$WIN_SIZE, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, uuid=$WIN_UUID, name=win" |
+    run sfdisk --no-reread --no-tell-kernel --wipe-partitions never --append "$DISK" ||
+    abort "sfdisk failed adding MSR/Windows; restore with: sfdisk $DISK < /sdcard/win-install/sda-before.sfdisk"
+fi
+
+# tell the kernel about exactly these partitions (BLKPG; the rest of sda is busy)
+run partx --delete --nr "$ESP_NR" "$DISK"
+for n in $ESP_NR $MSR_NR $WIN_NR; do
+  [ -e "$SYSB/sda$n" ] || run partx --add --nr "$n" "$DISK"
+done
+for n in ESP MSR WIN; do
+  eval nr=\$${n}_NR start=\$${n}_START size=\$${n}_SIZE
+  wait_node "$nr" || abort "kernel did not pick up sda$nr; reboot to recovery and flash again"
+  [ "$(part_geom "$nr")" = "$start $size" ] ||
+    abort "kernel sees sda$nr as $(part_geom "$nr"); reboot to recovery and flash again"
+done
+
+# ---------------------------------------------------------------- filesystems
+
+ui_print "Formatting ESP (FAT32)"
+run mkfs.fat -F 32 -s 1 -n SYSTEM "/dev/block/sda$ESP_NR" || abort "mkfs.fat failed"
+ui_print "Formatting Windows (NTFS)"
+run mkntfs -Q -L Windows -c 4096 -s "$SS" -p "$WIN_START" "/dev/block/sda$WIN_NR" ||
+  abort "mkntfs failed"
+
+# ---------------------------------------------------------------- image
+
+ui_print "Applying Windows (20-40 minutes, keep the phone on charge)"
+last=""
+wimlib-imagex apply "$ESD" 1 "/dev/block/sda$WIN_NR" 2>&1 | tr '\r' '\n' |
+  while read -r line; do
+    echo "$line" >> "$LOG"
+    pct="$(echo "$line" | sed -n 's/.*(\([0-9]*\)%).*/\1/p')"
+    stage="${line%%:*}"
+    if [ -n "$pct" ] && [ "$stage:$((pct / 5))" != "$last" ]; then
+      ui_print "  $stage: $pct%"
+      last="$stage:$((pct / 5))"
+    fi
+  done
+grep -q "Done applying WIM image" "$LOG" || abort "wimlib-imagex apply failed, see $LOG"
+
+ui_print "Installing the boot manager"
+mkdir -p "$W/esp-mnt"
+mount -t vfat "/dev/block/sda$ESP_NR" "$W/esp-mnt" || abort "cannot mount the ESP"
+cp -r "$W/esp/." "$W/esp-mnt/" || { umount "$W/esp-mnt"; abort "cannot copy boot files"; }
+sync
+umount "$W/esp-mnt"
+
+cp "$LOG" /sdcard/win-install/ 2>/dev/null
+ui_print "Done. Boot Windows with: fastboot boot Mu-munch-0.img"
+exit 0
