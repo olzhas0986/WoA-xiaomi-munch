@@ -122,3 +122,22 @@ written for this newer PEP generation (it has CTPM and PEPH) and carries
 both lists. The patch, renamed `0001-ssdt-pep-ppp-framework.patch`, now uses
 its PPPP (57 resources) and PRRP (9 triples), every name checked against
 the driver's tables. Firmware: `out/munch-uefi-windows33-pprr.img`.
+
+## Result 3: PPRR accepted
+
+Same 0x14E, status now `0xC0000001` (`tools/pep_dump_status.py` reads it
+from the dump). PPPM and PPRR parse; the failure is in the next steps of
+`InitializePppFramework`:
+
+- RVA 0x1177A8 classifies every registered resource. GPIO DV ranges get
+  type 1 or 2; others are looked up (RVA 0x11EA10, 0x11F1B8; apparently the
+  RPMh command DB) and get type 1 or 5.
+- RVA 0x116008 walks a table of three required types (1, 5, 2 at RVA
+  0x1A0030), and for each match calls a handler (RVA 0x11F780, 0x11DA20,
+  0x123860). Its status starts as `0xC0000001` and is returned unchanged if
+  no resource matches; a handler can also fail.
+- RVA 0x1162C8 follows.
+
+The triage dump does not show which of these failed: the driver's state and
+its WPP in-flight log are not in it, and qcpep's own dump callback faults
+(`+0x46408 → +0xF3E8C`) while the dump is written.
