@@ -94,3 +94,8 @@
   # docs/hardware.md (TFA98xx amplifier instead of CS35L41, 67 W charging).
   #
   alioth/AcpiTables.inf
+
+  #
+  # Diagnostics (built as separate .efi files, not part of the FD)
+  #
+  munchPkg/Application/RpmhPeek/RpmhPeek.inf

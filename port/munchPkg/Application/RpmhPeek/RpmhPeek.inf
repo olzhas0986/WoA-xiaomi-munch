@@ -1,0 +1,38 @@
+## @file
+#  Read the RPMh DRV CONFIG registers that qcpep8250 validates, save each value
+#  to \rpmh.txt on the boot volume before the next read, then chain-load the
+#  Windows boot manager. Diagnostic only: no register writes.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION    = 0x00010005
+  BASE_NAME      = RpmhPeek
+  FILE_GUID      = 90BF9FA9-28A9-4033-BC92-E6E842911F5A
+  MODULE_TYPE    = UEFI_APPLICATION
+  VERSION_STRING = 1.0
+  ENTRY_POINT    = UefiMain
+
+[Sources]
+  RpmhPeek.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+
+[LibraryClasses]
+  UefiApplicationEntryPoint
+  UefiLib
+  UefiBootServicesTableLib
+  IoLib
+  PrintLib
+  DevicePathLib
+  DebugLib
+
+[Protocols]
+  gEfiLoadedImageProtocolGuid
+  gEfiSimpleFileSystemProtocolGuid
+
+[Guids]
+  gEfiFileInfoGuid
