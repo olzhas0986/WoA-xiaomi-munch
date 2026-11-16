@@ -88,3 +88,22 @@ need a rebuild.
 
 - Active requests to the display RSC without dedicated active TCSs: the
   driver accepts the configuration, its runtime behaviour is untested.
+
+## Result 1: display TCS fix
+
+With the LMH + display TCS copy the driver passed the RPMh initialisation
+and stopped later with bugcheck 0x14E (SOC_CRITICAL_DEVICE_REMOVED,
+parameter 1 `'qpe0'`). The dump was still in `pagefile.sys` (Windows copies
+it out only on the next boot) and was read from recovery with
+`tools/win_logs.sh 37`. Stack: `+0x212e8c → +0x214fbc → +0x1db000`, which
+calls `KeBugCheckEx(0x14E)` when `InitializePppFramework` (RVA 0x115288)
+returns an error; the saved status was `0xC0000034`
+(STATUS_OBJECT_NAME_NOT_FOUND). That function first evaluates the ACPI
+method `PPPM`, which the previous port's SSDT did not define.
+
+`port/prev-port/0001-ssdt-pep-add-pppm.patch` adds `PPPM` returning the
+resource list of the Qualcomm SDM8250 DSDT (alioth), limited to the 44 IDs
+this driver build contains. Firmware built from the previous port with that
+patch (`MUNCH_GPU_FOUNDATION=6 MUNCH_USB_ACPI=1 MUNCH_UFS_ACPI=1`):
+`out/munch-uefi-windows32-pppm.img`. The unchanged rebuild reproduces the
+windows31 DSDT and SSDT hashes, so the patch is the only ACPI difference.
