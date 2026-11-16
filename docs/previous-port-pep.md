@@ -42,9 +42,11 @@ added to its diagnostic driver (see [rpmh-config.md](rpmh-config.md)).
 2. Recovery: flash the previous port's stage packages in order:
    `munch-gpu-scm`, `-rpen`, `-spmi`, `-pmic` bootstrap zips and
    `munch-gpu-pep-prep`. They only copy files to `ESP\MUNCH\GPU23…27`.
-3. `fastboot boot munch-uefi-windows31-ctpm.img`, then `fastboot oem windows`
-   and swap the cable for the OTG keyboard/mouse within 10 s (that firmware
-   switches the port to host and keeps VBUS on for Windows).
+3. `fastboot boot munch-uefi-windows31-ctpm.img`. It boots Windows on its own;
+   when it prints `Auto Windows: disconnect PC cable`, unplug the PC cable
+   within 10 s, then attach the OTG keyboard/mouse once Windows is up (the
+   firmware switches the port to host and keeps VBUS on only if the PC
+   cable is gone at that moment).
 4. Administrator PowerShell: `mountvol S: /S`, run each `S:\MUNCH\GPU2x\setup.cmd`
    in order and check that the four services report code 0.
 5. PEP package: `munch-pep-gpu28e.zip` (`tools/package_pep_install_disabled.py`),
