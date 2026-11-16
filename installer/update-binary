@@ -25,10 +25,20 @@ ui_print() {
   echo "$*" >> "$LOG"
 }
 
+# keep the log next to the image on the USB drive and in /sdcard/win-install
+save_log() {
+  for d in /usb_otg /usb-otg /usbstorage; do
+    grep -q " $d " /proc/mounts && cp "$LOG" "$d/win-install.log" 2>/dev/null
+  done
+  mkdir -p /sdcard/win-install 2>/dev/null && cp "$LOG" /sdcard/win-install/ 2>/dev/null
+  sync
+}
+
 abort() {
   ui_print "ERROR: $*"
-  ui_print "Nothing after this point was done. Log: $LOG"
-  [ -d /sdcard/win-install ] && cp "$LOG" /sdcard/win-install/ 2>/dev/null
+  ui_print "Nothing after this point was done."
+  save_log
+  ui_print "Log: win-install.log on the USB drive and in /sdcard/win-install"
   exit 1
 }
 
@@ -54,8 +64,12 @@ SYSB=/sys/class/block
 
 # ---------------------------------------------------------------- checks
 
-for tool in sfdisk partx mkfs.fat mkntfs wimlib-imagex; do
-  run "$tool" --version || run "$tool" -V || abort "$tool does not run here"
+# each tool's own "print version/usage and exit 0" option
+# (mkfs.fat from dosfstools 4.2 has no --version, only --help)
+for probe in "sfdisk --version" "partx --version" "mkfs.fat --help" "mkntfs --version" \
+             "wimlib-imagex --version"; do
+  # shellcheck disable=SC2086
+  run $probe || abort "${probe%% *} does not run here"
 done
 
 DEVICE="$(getprop ro.product.device 2>/dev/null)"
@@ -125,6 +139,7 @@ ui_print "Image: $ESD"
 
 if [ "$DRYRUN" = 1 ]; then
   ui_print "All checks passed. Flash the zip without 'dryrun' in its name to install."
+  save_log
   exit 0
 fi
 
@@ -205,6 +220,6 @@ cp -r "$W/esp/." "$W/esp-mnt/" || { umount "$W/esp-mnt"; abort "cannot copy boot
 sync
 umount "$W/esp-mnt"
 
-cp "$LOG" /sdcard/win-install/ 2>/dev/null
+save_log
 ui_print "Done. Boot Windows with: fastboot boot Mu-munch-0.img"
 exit 0
