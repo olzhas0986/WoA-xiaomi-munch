@@ -3,12 +3,13 @@
 
 Inputs:
   --gpt      raw dump of the start of sda (see tools/gpt_read.py)
-  --target   number or GPT name of the partition to replace
+  --target   number or GPT name of a partition to replace; repeat it to
+             replace several adjacent partitions as one range
   --win      output directory of tools/prepare_image.sh
   --tools    static aarch64 tools from scripts/build_recovery_tools.sh
 
-The chosen partition is split into ESP (512 MiB), MSR (16 MiB) and Windows
-(the rest). Partition GUIDs are generated here and baked into both the BCD
+The chosen range is split into ESP (512 MiB), MSR (16 MiB) and Windows
+(the rest). ESP and Windows reuse the numbers of the replaced partitions. Partition GUIDs are generated here and baked into both the BCD
 and install.conf, so the BCD matches the partitions the zip creates.
 
 Outputs (in -o, default out/installer):
@@ -17,7 +18,7 @@ Outputs (in -o, default out/installer):
   layout.txt                     what will be written where
 
 Example:
-    make_installer.py --gpt out/sda-gpt.bin --target arch
+    make_installer.py --gpt out/sda-gpt.bin --target arch_boot --target arch_root
 """
 import argparse
 import hashlib
@@ -49,61 +50,81 @@ PROTECTED_NAMES = {"userdata", "super", "metadata", "persist", "misc", "frp", "c
                    "modemst1", "modemst2", "fsg", "fsc", "ssd", "logfs", "rawdump"}
 
 
-def pick_target(gpt, target):
-    parts = gpt["partitions"]
-    match = [p for p in parts if str(p["number"]) == target or p["name"] == target]
-    if len(match) != 1:
-        sys.exit(f"target '{target}' matches {len(match)} partitions")
-    p = match[0]
-    if p["name"].lower() in PROTECTED_NAMES:
-        sys.exit(f"refusing to touch '{p['name']}'")
-    if p["type_guid"] not in ALLOWED_TYPES:
-        sys.exit(f"partition {p['number']} '{p['name']}' has type {p['type_guid']}, which is "
-                 "not a Linux/Windows data type - is it really the spare partition?")
-    if not 20 << 30 <= p["size_bytes"] <= 128 << 30:
-        sys.exit(f"partition is {p['size_bytes'] >> 20} MiB, expected 20-128 GiB")
-    return p
+def pick_targets(gpt, targets):
+    parts, picked = gpt["partitions"], []
+    for target in targets:
+        match = [p for p in parts if str(p["number"]) == target or p["name"] == target]
+        if len(match) != 1:
+            sys.exit(f"target '{target}' matches {len(match)} partitions")
+        p = match[0]
+        if p["name"].lower() in PROTECTED_NAMES:
+            sys.exit(f"refusing to touch '{p['name']}'")
+        if p["type_guid"] not in ALLOWED_TYPES:
+            sys.exit(f"partition {p['number']} '{p['name']}' has type {p['type_guid']}, which "
+                     "is not a Linux/Windows data type - is it really a spare partition?")
+        if p not in picked:
+            picked.append(p)
+    picked.sort(key=lambda p: p["first_lba"])
+    ss = gpt["sector_size"]
+    for a, b in zip(picked, picked[1:]):
+        # anything else between the targets would be overwritten
+        others = [p for p in parts if p not in picked
+                  and p["first_lba"] <= b["first_lba"] and p["last_lba"] >= a["last_lba"]]
+        if others or (b["first_lba"] - a["last_lba"] - 1) * ss > MIB:
+            sys.exit(f"'{a['name']}' and '{b['name']}' are not adjacent")
+    total = (picked[-1]["last_lba"] - picked[0]["first_lba"] + 1) * ss
+    if not 20 << 30 <= total <= 128 << 30:
+        sys.exit(f"target range is {total >> 20} MiB, expected 20-128 GiB")
+    return picked
 
 
-def layout(gpt, target):
+def layout(gpt, targets):
     ss = gpt["sector_size"]
     align = MIB // ss
     used = {p["number"] for p in gpt["partitions"]}
     free = [n for n in range(1, gpt["entries"] + 1) if n not in used]
-    if len(free) < 2:
+    numbers = [t["number"] for t in targets] + free
+    if len(numbers) < 3:
         sys.exit("no free partition entries for MSR and Windows")
+    first, last = targets[0]["first_lba"], targets[-1]["last_lba"]
 
-    esp_start = -(-target["first_lba"] // align) * align
+    esp_start = -(-first // align) * align
     esp_size = ESP_BYTES // ss
     msr_start, msr_size = esp_start + esp_size, MSR_BYTES // ss
     win_start = msr_start + msr_size
-    win_size = (target["last_lba"] + 1 - win_start) // align * align
+    win_size = (last + 1 - win_start) // align * align
     if win_size * ss < MIN_WIN_BYTES:
         sys.exit(f"only {win_size * ss >> 20} MiB left for Windows")
     new = lambda: str(uuid.uuid4()).upper()  # noqa: E731
-    return {
-        "SECTOR_SIZE": ss, "DISK_GUID": gpt["disk_guid"],
-        "TARGET_NR": target["number"], "TARGET_NAME": target["name"],
-        "TARGET_UUID": target["part_guid"], "TARGET_START": target["first_lba"],
-        "TARGET_SIZE": target["last_lba"] - target["first_lba"] + 1,
-        "ESP_NR": target["number"], "ESP_START": esp_start, "ESP_SIZE": esp_size, "ESP_UUID": new(),
-        "MSR_NR": free[0], "MSR_START": msr_start, "MSR_SIZE": msr_size, "MSR_UUID": new(),
-        "WIN_NR": free[1], "WIN_START": win_start, "WIN_SIZE": win_size, "WIN_UUID": new(),
-    }
+    esp_nr, win_nr, msr_nr = numbers[0], numbers[1], numbers[2]
+    conf = {"SECTOR_SIZE": ss, "DISK_GUID": gpt["disk_guid"],
+            "TARGET_NRS": " ".join(str(t["number"]) for t in targets)}
+    for t in targets:
+        n = t["number"]
+        conf.update({f"T{n}_NAME": t["name"], f"T{n}_UUID": t["part_guid"],
+                     f"T{n}_START": t["first_lba"],
+                     f"T{n}_SIZE": t["last_lba"] - t["first_lba"] + 1})
+    conf.update({
+        "ESP_NR": esp_nr, "ESP_START": esp_start, "ESP_SIZE": esp_size, "ESP_UUID": new(),
+        "MSR_NR": msr_nr, "MSR_START": msr_start, "MSR_SIZE": msr_size, "MSR_UUID": new(),
+        "WIN_NR": win_nr, "WIN_START": win_start, "WIN_SIZE": win_size, "WIN_UUID": new(),
+    })
+    return conf
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--gpt", required=True)
-    ap.add_argument("--target", required=True)
+    ap.add_argument("--target", required=True, action="append")
     ap.add_argument("--win", default=os.path.join(ROOT, "out/win"))
     ap.add_argument("--tools", default=os.path.join(ROOT, "out/recovery-tools/bin"))
     ap.add_argument("-o", "--out", default=os.path.join(ROOT, "out/installer"))
     args = ap.parse_args()
 
     gpt = gpt_read.parse(open(args.gpt, "rb").read())
-    conf = layout(gpt, pick_target(gpt, args.target))
+    targets = pick_targets(gpt, args.target)
+    conf = layout(gpt, targets)
     esd = os.path.join(args.win, "install.esd")
     for path in (esd, os.path.join(args.win, "BCD-Template"),
                  os.path.join(args.win, "esp/EFI/Boot/bootaa64.efi")):
@@ -128,9 +149,11 @@ def main():
     conf_text = "# generated by tools/make_installer.py - do not edit\n" + \
         "".join(f"{k}={v}\n" if isinstance(v, int) else f"{k}='{v}'\n" for k, v in conf.items())
     ss = conf["SECTOR_SIZE"]
-    summary = [f"disk GUID {conf['DISK_GUID']}, sector {ss}",
-               f"replace sda{conf['TARGET_NR']} '{conf['TARGET_NAME']}' "
-               f"({conf['TARGET_SIZE'] * ss >> 20} MiB) with:"]
+    summary = [f"disk GUID {conf['DISK_GUID']}, sector {ss}", "replace:"]
+    for t in targets:
+        summary.append(f"  sda{t['number']:<3} '{t['name']}' {t['size_bytes'] >> 20} MiB "
+                       f"{t['part_guid']}")
+    summary.append("with:")
     for n in ("ESP", "MSR", "WIN"):
         summary.append(f"  sda{conf[n + '_NR']:<3} {n:<3} start {conf[n + '_START']:>10} "
                        f"size {conf[n + '_SIZE'] * ss >> 20:>6} MiB  {conf[n + '_UUID']}")
