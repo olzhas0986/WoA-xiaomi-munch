@@ -6,6 +6,7 @@
 # Output (out/recovery-tools/bin):
 #   sfdisk, partx    util-linux: GPT editing, BLKPG partition updates
 #   mkntfs           ntfs-3g ntfsprogs: create the Windows NTFS volume
+#   ntfscat, ntfsls  read files from the Windows volume without mounting it
 #   wimlib-imagex    apply the ESD directly to the NTFS volume (NTFS-3G mode)
 #   mkfs.fat         dosfstools: create the FAT32 ESP
 #
@@ -77,7 +78,7 @@ echo "==> ntfs-3g (libntfs-3g, mkntfs)"
       --disable-plugins >/dev/null
   make -j"$JOBS" LDFLAGS="-all-static" >/dev/null
   make install rootlibdir="$PREFIX/lib" rootbindir="$PREFIX/bin" rootsbindir="$PREFIX/sbin" >/dev/null
-  install -m755 ntfsprogs/mkntfs "$OUT/" )
+  install -m755 ntfsprogs/mkntfs ntfsprogs/ntfscat ntfsprogs/ntfsls "$OUT/" )
 
 echo "==> wimlib (NTFS-3G backend)"
 ( cd "$SRC/wimlib-1.14.5"
