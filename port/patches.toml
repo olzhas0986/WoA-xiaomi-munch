@@ -1,0 +1,60 @@
+# Binary patches for the munch XBL drivers (BOOT.XF.3.2-00354-SM8250-1).
+#
+# Same patch set that Mu-Silicium applies to alioth; offsets and bytes were
+# verified by diffing the stock and patched alioth drivers against the munch
+# drivers. A patch is applied only if the expected `old` bytes are in place,
+# so on a different XBL build the tool stops instead of corrupting a driver.
+#
+# Fields: name   - driver BASE_NAME from binaries-map.tsv
+#         offset - offset in the PE file; or anchor + delta (signature search)
+#         old / new - bytes in hex
+
+[[patch]]
+name   = "ButtonsDxe"
+reason = "Power key reports ENTER (UnicodeChar 0x0D) instead of SCAN_SUSPEND, otherwise nothing confirms a choice in the UEFI menu"
+offset = 0x36DC
+old    = "51208052f1330079"   # mov w17,#0x102 ; strh w17,[sp,#0x18] (ScanCode)
+new    = "b1018052f1370079"   # mov w17,#0xd   ; strh w17,[sp,#0x1a] (UnicodeChar)
+
+[[patch]]
+name   = "UsbConfigDxe"
+reason = "Keep the USB controller alive in the ExitBootServices handler (first port)"
+offset = 0x5684
+old    = "2a020034"           # cbz w10, +0x44
+new    = "11000014"           # b +0x44
+
+[[patch]]
+name   = "UsbConfigDxe"
+reason = "Keep the USB controller alive in the ExitBootServices handler (second port)"
+offset = 0x56E0
+old    = "2a020034"
+new    = "11000014"
+
+[[patch]]
+name   = "TzDxe"
+reason = "cmnlib/keymaster TZ apps are already loaded by the stock XBL: set the 'already initialised' flag so they are not loaded again"
+offset = 0xD469
+old    = "00"
+new    = "01"
+
+[[patch]]
+name   = "FeatureEnablerDxe"
+reason = "Clock enable routine returns EFI_SUCCESS immediately: enabling the clocks again drops the framebuffer"
+offset = 0x1790
+old    = "ffc300d1f30b00f9"   # sub sp,sp,#0x30 ; str x19,[sp,#0x10]
+new    = "000080d2c0035fd6"   # mov x0,#0 ; ret
+
+[[patch]]
+name   = "UsbMsdDxe"
+reason = "Mass Storage reports the disk as non-removable so the host Windows treats it as a hard disk (needed for diskpart/dism)"
+offset = 0x3A98
+old    = "ec031932"           # orr w12,wzr,#0x80 (RMB = removable)
+new    = "0c008052"           # mov w12,#0
+
+[[patch]]
+name   = "DALSys"
+reason = "CacheCoherency = 1 for the \\_SB_.UFS0 node in the SMMU table: without it UFS is unstable after leaving UEFI"
+anchor = "245c5f53425f2e55465330"   # "$\_SB_.UFS0"
+delta  = -8
+old    = "00"
+new    = "01"
