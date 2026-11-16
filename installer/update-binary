@@ -84,10 +84,12 @@ SS="$(cat /sys/block/sda/queue/logical_block_size)"
 GUID="$(sfdisk --disk-id "$DISK" 2>>"$LOG")"
 [ "$GUID" = "$DISK_GUID" ] || abort "disk GUID $GUID does not match this zip ($DISK_GUID)"
 
-# start/size of partition N in logical sectors, from sysfs (512-byte units)
+# start/size of partition N in logical sectors, from sysfs (512-byte units).
+# The recovery shell (mksh) has 32-bit arithmetic: divide, never multiply
+# sector numbers by byte counts.
 part_geom() {
   [ -e "$SYSB/sda$1/start" ] || { echo "- -"; return; }
-  echo "$(( $(cat "$SYSB/sda$1/start") * 512 / SS )) $(( $(cat "$SYSB/sda$1/size") * 512 / SS ))"
+  echo "$(( $(cat "$SYSB/sda$1/start") / (SS / 512) )) $(( $(cat "$SYSB/sda$1/size") / (SS / 512) ))"
 }
 part_uuid() { sfdisk --part-uuid "$DISK" "$1" 2>/dev/null; }
 part_name() { sfdisk --part-label "$DISK" "$1" 2>/dev/null; }
@@ -99,8 +101,8 @@ for n in $TARGET_NRS; do
   if [ "$(part_uuid "$n")" = "$tuuid" ]; then
     [ "$(part_name "$n")" = "$tname" ] || abort "partition $n is not '$tname'"
     [ "$(part_geom "$n")" = "$tstart $tsize" ] ||
-      abort "partition $n geometry changed since the zip was built"
-    ui_print "Target: sda$n '$tname' ($((tsize * SS / 1048576)) MiB)"
+      abort "partition $n is at $(part_geom "$n"), the zip expects $tstart $tsize"
+    ui_print "Target: sda$n '$tname' ($((tsize / (1048576 / SS))) MiB)"
   else
     fresh=0
   fi
