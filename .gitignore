@@ -1,0 +1,12 @@
+# Large and proprietary binaries stay out of git, see firmware/SHA256SUMS
+*.iso
+*.wim
+*.esd
+payload.bin
+*.img
+*.elf
+*.mbn
+*.fd
+*.zip
+out/
+__pycache__/
