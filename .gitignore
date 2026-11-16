@@ -10,3 +10,4 @@ payload.bin
 *.zip
 out/
 __pycache__/
+work/
