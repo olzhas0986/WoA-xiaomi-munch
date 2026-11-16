@@ -11,3 +11,4 @@ payload.bin
 out/
 __pycache__/
 work/
+*.dtb
