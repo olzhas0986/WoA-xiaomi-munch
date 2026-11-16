@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Pull Windows setup and boot logs from the phone, read-only, over adb in recovery.
+# Pull Windows setup/boot logs and the SYSTEM hive from the phone, read-only,
+# over adb in recovery.
 #
 #   tools/win_logs.sh [partition number, default 36] [-o out/win-logs]
 #
@@ -36,6 +37,9 @@ FILES=(
   /Windows/System32/LogFiles/Srt/SrtTrail.txt
   /Windows/Logs/CBS/CBS.log
   /Windows/ntbtlog.txt
+  /Windows/System32/config/SYSTEM
+  /Windows/System32/config/SYSTEM.LOG1
+  /Windows/System32/config/SYSTEM.LOG2
 )
 for f in "${FILES[@]}"; do
   name="$(echo "${f#/Windows/}" | tr '/' '_')"
