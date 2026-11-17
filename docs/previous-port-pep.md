@@ -235,3 +235,27 @@ back. Test: the same run with idle states disabled
 (`powercfg` SUB_PROCESSOR IDLEDISABLE = 1). If the hang disappears, the idle
 state description (CPU `_LPI`, CTPM) or PSCI is the next target; if not,
 the RPMh path (display RSC without active TCS) is.
+
+The idle test did not change anything (IDLEDISABLE = 1 confirmed with
+`powercfg /qh`; `start.cmd` prints, the phone hangs for a while, then 0x101).
+The previous port's 0x101 dump (`out/kona-gpu/watchdog-full`) had CPU6 hung
+with a PEP frame chain through the LMh helper 0x5C50 and a pending write of
+0x3A to the block mapped at 0x18350800. The driver maps two LMh blocks,
+0x18350800 and 0x18358800 (the SM8150 layout; its PDB is `qcpep8180.pdb`),
+and munch's DT has no LMh there. Besides 0x5C50, three more functions touch
+them: 0x5520 (status read, result unused), 0x5B20 and 0x5B88 (writes),
+reached from eight call sites, so the two NOPs of `--with-lmh` do not cover
+the runtime paths.
+
+## Attempt 8: no LMh MMIO
+
+`--no-lmh-mmio` makes all four functions return immediately:
+
+```sh
+tools/patch_qcpep_display_tcs.py qcpep8250.sys --with-lmh --no-lmh-mmio \
+    --tag-unsuccessful out/qcpep/unsuccessful-tags.json -o out/qcpep/qcpep8250-lmh-disptcs-nolmh.sys
+tools/package_pep_disptcs.py munch-pep-lmh-test.zip out/qcpep/qcpep8250-lmh-disptcs-nolmh.sys \
+    --tags out/qcpep/unsuccessful-tags.json --no-lmh-mmio -o out/qcpep/munch-pep-lmh-disptcs-nolmh-test.zip
+```
+
+Firmware stays windows35.

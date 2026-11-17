@@ -23,6 +23,13 @@ on the target, with test signing enabled.
 two BL calls to helper RVA 0x5c50 at RVA 0x1df358 and 0x21555c become NOPs
 (the crash that followed it is the one this patch addresses).
 
+--no-lmh-mmio turns the four functions that access the LMh blocks the driver
+maps at 0x18350800 / 0x18358800 (layout of SM8150; munch's DT has no LMh
+there) into a bare RET: RVA 0x5520 (status read, result unused), 0x5B20 and
+0x5B88 (writes), 0x5C50 (the helper --with-lmh already bypasses at two call
+sites). After PEP initialisation succeeded the system hung with
+CLOCK_WATCHDOG_TIMEOUT, as the previous port did inside 0x5C50.
+
 --tag-unsuccessful FILE gives every `orr wN, wzr, #0xC0000001` (STATUS_UNSUCCESSFUL)
 between RVA 0x100000 and 0x130000 its own status value, still an error with
 bit 31 set, and writes the value -> RVA map to FILE. A crash dump then shows
@@ -50,6 +57,9 @@ NEW_TCS = 2
 LMH_CALLS = (0x1DF358, 0x21555C)
 LMH_TARGET = 0x5C50
 NOP = bytes.fromhex("1f2003d5")
+RET = bytes.fromhex("c0035fd6")
+# function entry RVA -> expected first instruction
+LMH_FUNCS = {0x5520: "fd7bbda9", 0x5B20: "fd7bbea9", 0x5B88: "fd7bbda9", 0x5C50: "fd7bbda9"}
 
 
 def sections(data):
@@ -116,6 +126,8 @@ def main():
     ap.add_argument("-o", "--out", required=True)
     ap.add_argument("--tag-unsuccessful", metavar="JSON",
                     help="give each STATUS_UNSUCCESSFUL site a unique status; write the map")
+    ap.add_argument("--no-lmh-mmio", action="store_true",
+                    help="make the four LMh register functions return immediately")
     ap.add_argument("--with-lmh", action="store_true",
                     help="also NOP the two LMH helper calls (previous port's diagnostic)")
     args = ap.parse_args()
@@ -149,6 +161,15 @@ def main():
                 sys.exit(f"RVA {rva:#x} is not BL {LMH_TARGET:#x}")
             data[off:off + 4] = NOP
             print(f"LMH: BL {LMH_TARGET:#x} at RVA {rva:#x} -> NOP")
+
+    if args.no_lmh_mmio:
+        for rva, want in LMH_FUNCS.items():
+            off = rva_to_offset(secs, rva)
+            got = data[off:off + 4].hex()
+            if got != want:
+                sys.exit(f"RVA {rva:#x} starts with {got}, expected {want}")
+            data[off:off + 4] = RET
+            print(f"LMh: RVA {rva:#x} -> RET (file offset {off:#x})")
 
     if args.tag_unsuccessful:
         tags = tag_unsuccessful(data, secs)
