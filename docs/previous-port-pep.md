@@ -141,3 +141,22 @@ from the dump). PPPM and PPRR parse; the failure is in the next steps of
 The triage dump does not show which of these failed: the driver's state and
 its WPP in-flight log are not in it, and qcpep's own dump callback faults
 (`+0x46408 → +0xF3E8C`) while the dump is written.
+
+## Attempt 4: full pipa PEP0 configuration
+
+Instead of adding PEP0 methods one crash at a time,
+`tools/import_pipa_pep0.py` copies all 58 PEP0 objects the SSDT lacks from
+the pipa DSDT (device power configurations, DCVS, CPU/GPU/camera/PCIe
+settings, resource-to-device maps) plus the eleven `\_SB` names they use
+(PSUB, SOID, PLST, SVMJ, STOR, PUS3, DPP0/1, MPP0/1, BSID). THTZ (40 thermal
+zones) and NPUR (AGR0) are left out because what they reference does not
+exist. Device paths inside the packages are strings, so absent devices do
+not break compilation.
+
+```sh
+tools/import_pipa_pep0.py pipa/Decompiled/DSDT.dsl <SSDT with 0001 applied> -o SSDT-GPU-PEP.asl
+```
+
+Firmware: `out/munch-uefi-windows34-pep0.img`. Rollback: the windows33
+firmware (`out/munch-uefi-windows33-pprr.img`), whose SSDT is the 0001 patch
+alone.
