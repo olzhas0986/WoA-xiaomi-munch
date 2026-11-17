@@ -75,6 +75,8 @@ def main():
                     help="also allow a brk #0xf000 at this file offset (hex)")
     ap.add_argument("--ret0-offset", metavar="OFF", type=lambda v: int(v, 16), action="append",
                     default=[], help="also allow `mov w0, #0; ret` at this file offset (hex)")
+    ap.add_argument("--patch-log", metavar="JSON",
+                    help="also allow the changes listed by patch_qcpep_display_tcs.py --patch-log")
     ap.add_argument("--tags", metavar="JSON",
                     help="also allow the STATUS_UNSUCCESSFUL tag patches listed in this map")
     args = ap.parse_args()
@@ -105,6 +107,12 @@ def main():
         if new[off:off + 8] != bytes.fromhex("00008052c0035fd6"):
             sys.exit(f"driver has no `mov w0, #0; ret` at file offset {off:#x}")
         tagged.update(range(off, off + 8))
+    if args.patch_log:
+        for c in json.load(open(args.patch_log)):
+            off, size = c["offset"], c["size"]
+            if new[off:off + size].hex() != c["new"]:
+                sys.exit(f"driver does not carry the logged change at file offset {off:#x}")
+            tagged.update(range(off, off + size))
     unexpected = [i for i in diff if i not in CHECKSUM and i != TCS_OFFSET and i not in tagged]
     if unexpected or TCS_OFFSET not in diff or (old[TCS_OFFSET], new[TCS_OFFSET]) != (4, 2):
         sys.exit(f"driver differs from the LMH copy in unexpected places: {[hex(i) for i in unexpected]}")

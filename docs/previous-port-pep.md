@@ -364,3 +364,26 @@ soon as the node exists. Next point: 0xFBF38, between the two nodes.
 
 Breakpoint at 0xFBF38 reached: `/clk/hmss_ahb` is fine. Next point:
 0xFBFB8, after `/clk/mmnoc_ahb` and before 0xFB118.
+
+Breakpoint at 0xFBFB8 reached, at 0xFB178 not: the hang is in the first
+part of 0xFB118, which defines the node `/node/clk/hmss_ahb` (driver
+function 0xFB630). Defining it fires the availability callback registered
+before and turns the clock on. The node's only clock is
+`gcc_sys_noc_cpuss_ahb_clk`, which Linux marks critical (always on) on
+SM8250; enabling or reconfiguring it from here apparently waits for a
+status that never comes.
+
+## Attempt 11: no hmss_ahb node
+
+`--insn RVA=OLD:NEW` replaces one checked instruction; `--patch-log` hands
+all ret0/brk/insn changes to the packager. 0xFB14C `cbz x8` becomes `b`, so
+0xFB118 defines no node from its table (the second entry is empty anyway):
+
+```sh
+tools/patch_qcpep_display_tcs.py qcpep8250.sys --with-lmh --no-lmh-mmio --ret0-at f49a0 \
+    --insn fb14c=e80000b4:07000014 --patch-log out/qcpep/nohmss.json \
+    --tag-unsuccessful out/qcpep/unsuccessful-tags.json -o out/qcpep/qcpep8250-nohmss.sys
+tools/package_pep_disptcs.py munch-pep-lmh-test.zip out/qcpep/qcpep8250-nohmss.sys \
+    --tags out/qcpep/unsuccessful-tags.json --no-lmh-mmio --patch-log out/qcpep/nohmss.json \
+    -o out/qcpep/munch-pep-nohmss-test.zip
+```

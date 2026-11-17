@@ -40,6 +40,12 @@ hung before reaching RVA.
 function at RVA with `mov w0, #0; ret`, so it returns success at once. The
 function must start with a pre-indexed `stp`/`str` to sp.
 
+--insn RVA=OLD:NEW (repeatable) replaces the 4-byte instruction at RVA,
+given as little-endian hex, after checking that it currently is OLD.
+
+--patch-log FILE writes the file offsets and sizes of every --ret0-at,
+--brk-at and --insn change, for package_pep_disptcs.py --patch-log.
+
 --tag-unsuccessful FILE gives every `orr wN, wzr, #0xC0000001` (STATUS_UNSUCCESSFUL)
 between RVA 0x100000 and 0x130000 its own status value, still an error with
 bit 31 set, and writes the value -> RVA map to FILE. A crash dump then shows
@@ -142,6 +148,10 @@ def main():
                     help="replace the instruction at RVA (hex) with brk #0xf000")
     ap.add_argument("--ret0-at", metavar="RVA", type=lambda v: int(v, 16), action="append",
                     default=[], help="make the function at RVA (hex) return 0 at once")
+    ap.add_argument("--insn", metavar="RVA=OLD:NEW", action="append", default=[],
+                    help="replace one instruction (little-endian hex) after checking it")
+    ap.add_argument("--patch-log", metavar="JSON",
+                    help="write the offsets of --ret0-at/--brk-at/--insn changes")
     ap.add_argument("--no-lmh-mmio", action="store_true",
                     help="make the four LMh register functions return immediately")
     ap.add_argument("--with-lmh", action="store_true",
@@ -187,6 +197,19 @@ def main():
             data[off:off + 4] = RET
             print(f"LMh: RVA {rva:#x} -> RET (file offset {off:#x})")
 
+    log = []
+    for spec in args.insn:
+        rva, _, pair = spec.partition("=")
+        old, _, new = pair.partition(":")
+        rva = int(rva, 16)
+        old, new = bytes.fromhex(old), bytes.fromhex(new)
+        off = rva_to_offset(secs, rva)
+        if len(old) != 4 or len(new) != 4 or bytes(data[off:off + 4]) != old:
+            sys.exit(f"RVA {rva:#x}: expected {old.hex()}, found {data[off:off + 4].hex()}")
+        data[off:off + 4] = new
+        log.append({"rva": f"{rva:#x}", "offset": off, "size": 4, "new": new.hex()})
+        print(f"INSN at RVA {rva:#x} (file offset {off:#x}): {old.hex()} -> {new.hex()}")
+
     for rva in args.ret0_at:
         off = rva_to_offset(secs, rva)
         insn = struct.unpack_from("<I", data, off)[0]
@@ -194,12 +217,18 @@ def main():
         if insn & 0xFFC003E0 != 0xA98003E0 and insn & 0xFFE00FE0 != 0xF8000FE0:
             sys.exit(f"RVA {rva:#x} does not start with a pre-indexed stp/str ({insn:#010x})")
         data[off:off + 8] = RET0
+        log.append({"rva": f"{rva:#x}", "offset": off, "size": 8, "new": RET0.hex()})
         print(f"RET0 at RVA {rva:#x} (file offset {off:#x})")
 
     if args.brk_at is not None:
         off = rva_to_offset(secs, args.brk_at)
         print(f"BRK at RVA {args.brk_at:#x} (file offset {off:#x}), was {data[off:off + 4].hex()}")
         data[off:off + 4] = BRK
+        log.append({"rva": f"{args.brk_at:#x}", "offset": off, "size": 4, "new": BRK.hex()})
+
+    if args.patch_log:
+        with open(args.patch_log, "w") as f:
+            json.dump(log, f, indent=2)
 
     if args.tag_unsuccessful:
         tags = tag_unsuccessful(data, secs)
