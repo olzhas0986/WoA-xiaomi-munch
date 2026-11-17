@@ -436,3 +436,14 @@ Per-rail skip: the jump-table entry of a rail in both functions is pointed
 at their success exit (0xF49A0 -> 0xF4C78 `mov w0, #0`, 0xFE8A0 -> 0xFEAFC
 `mov w0, #1`), e.g. rail 8: `--insn f4cb8=13000000:7e000000 --insn
 feb34=2e000000:59000000`. First test: rail 8 skipped, breakpoint at 0xFBD10.
+
+Rail 8 skipped: still 0x101. Rails 4-8 skipped (only group A, rails 0-3,
+read): still 0x101. So group A hangs, and with all groups skipped 0xFBC00
+fails, i.e. every group of the level table is unreadable or the driver
+needs data from it. The base pointer at RVA 0x1D5BC8 is written indirectly
+and could not be traced statically yet; the driver imports no
+MmGetPhysicalAddress, and none of its constant MmMapIoSpaceEx mappings
+(0x0AEB0000, 0x17A00000, 0x090B0000, 0x0C300000, LMh) is an obvious match.
+The qcpep INF sets no clock driver parameters (only PEP resources and
+HWDRIPS), and neither the pipa DSDT (PEP0 has no _CRS) nor the munch device
+tree describes these registers.
