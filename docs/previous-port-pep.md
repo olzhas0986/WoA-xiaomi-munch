@@ -184,3 +184,27 @@ tools/pep_dump_status.py pep.dmp --tags=out/qcpep/unsuccessful-tags.json
 ```
 
 The next dump names the exact site that produced the failing status.
+
+## Result 5: the failing site is the Command DB lookup
+
+The tagged driver stopped with status `0xF0000007`, the tag of RVA 0x11F384.
+That is the end of RVA 0x11F1B8, called from the resource classification
+(RVA 0x117910) for every non-GPIO resource in PPPM. It derives a Command DB
+name from the resource (RVA 0x11EA10: `smpa1`, `ldoc5`, `bobc1`, `lnbclka2`,
+`rfclka1`, `divclkc1`, ...), queries the Command DB (RVA 0x114600; the DB
+address is read from AOP message RAM at 0x0C3F000C, as in Linux) and returns
+STATUS_UNSUCCESSFUL unless the entry exists, its slave version is 1.x and its
+aux data is 4 bytes long.
+
+So at least one PPPM resource from the pipa list has no such entry on
+munch. Linux SM8250 only uses `rfclka1`/`rfclka3` and no `divclk*`, which
+makes RFCLK2_A, DIVCLK1/2_A and DIVCLK1_C the first suspects, but the real
+Command DB decides:
+
+```sh
+adb shell 'mount -t debugfs none /sys/kernel/debug; cat /sys/kernel/debug/cmd-db' > out/cmd-db.txt
+tools/cmd_db_check.py out/cmd-db.txt work/prev-port/firmware/munch/Acpi/SSDT-GPU-PEP.asl
+```
+
+Resources reported as MISSING or FAIL are dropped from PPPP (and the PPRR
+ranges narrowed if needed).
