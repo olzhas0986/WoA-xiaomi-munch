@@ -11,6 +11,7 @@ Everything else in the package is kept byte-for-byte. Checks:
   * the input package carries the expected LMH driver (sha256 pinned);
   * the new driver differs from it only in the PE checksum and in the display
     record's TCS field (file offset 0x19DD84: 4 -> 2);
+  * run.cmd runs rollback, prepare and start in order, stopping on failure;
   * test.ps1 accepts an SSDT up to 4 MiB instead of 64 KiB;
   * patch.json gets the new unsigned hash and the extra change; SHA256.json
     is regenerated for the files it lists.
@@ -43,6 +44,19 @@ the driver stop with bugcheck 0x14B. The two LMH NOPs are unchanged.
 
 Workflow, scripts and rollback are the same as in README.md.
 """
+
+
+# rollback, prepare and start in one go, stopping at the first failure
+RUN_CMD = "\r\n".join([
+    "@echo off",
+    "set PS=\"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -ExecutionPolicy Bypass -File \"%~dp0test.ps1\"",
+    "for %%P in (rollback prepare start) do (",
+    "  echo === %%P",
+    "  %PS% -Phase %%P || (echo %%P failed & pause & exit /b 1)",
+    ")",
+    "pause",
+    "",
+])
 
 
 def sha(data):
@@ -113,6 +127,7 @@ def main():
         sys.exit("test.ps1: SSDT size check not found")
     files[PREFIX + "test.ps1"] = test.replace(
         old_limit, 'n>4194304)throw new Exception("Cannot read SSDT")').encode("latin-1")
+    files[PREFIX + "run.cmd"] = RUN_CMD.encode()
     listing = json.loads(files[PREFIX + "SHA256.json"])
     for name in listing:
         listing[name] = sha(files[PREFIX + name])
