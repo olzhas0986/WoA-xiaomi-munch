@@ -296,3 +296,12 @@ RSC (id 9, the controller whose TCS requirement was lowered from 4 to 2),
 resolves `cx.lvl`, `mx.lvl`, `xo.lvl`, `mmcx.lvl` in the Command DB and
 registers them (0x105EF8, 0x25268). Next point: 0x1DB56C, between the two
 calls (`out/qcpep/munch-pep-brk1db56c-test.zip`).
+
+Breakpoint at 0x1DB56C was reached: bugcheck 0x1000007E
+(SYSTEM_THREAD_EXCEPTION_NOT_HANDLED), exception 0x80000003 at
+`...B56C` (out/win-logs-pep9). 0x72848, including the display RSC client,
+completes; the hang is in 0xF2490. That function first calls 0xF5A78
+(registration through 0x101258, as 0x72848 does), then, under a mutex,
+allocates a 'QDSS'-tagged record and calls a function pointer stored at
++0x88 of the object at RVA 0x1CD0E0 with (5, 1, ...). Next point:
+0xF24C8, right after 0xF5A78 (`out/qcpep/munch-pep-brkf24c8-test.zip`).
