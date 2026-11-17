@@ -422,3 +422,17 @@ rail table stays empty and a later check in 0xFBC00 fails). Skipping
 0xF49A0 had moved the hang to the hmss_ahb node, which runs later in the
 same function, so 0xF49A0 itself may never have hung. Next: 0xF49A0
 restored, hmss_ahb node still skipped, same breakpoint.
+
+With 0xF49A0 restored and only the hmss_ahb node skipped the test hangs
+again (0x101), so the rail read-back does stall, and skipping it entirely
+leaves the rail table empty. 0xF49A0 and its helper 0xFE8A0 read a
+40-entry level table per rail from three register groups: rails 0-3 at
+base + 0xB23000, rails 4-7 at base + 0xB25000, rail 8 at base + 0xB21000.
+No public source or the munch device tree mentions these registers (Linux
+takes ARC levels from the Command DB), so they are probably locked for the
+non-secure world by the Android firmware, as LMh seems to be.
+
+Per-rail skip: the jump-table entry of a rail in both functions is pointed
+at their success exit (0xF49A0 -> 0xF4C78 `mov w0, #0`, 0xFE8A0 -> 0xFEAFC
+`mov w0, #1`), e.g. rail 8: `--insn f4cb8=13000000:7e000000 --insn
+feb34=2e000000:59000000`. First test: rail 8 skipped, breakpoint at 0xFBD10.
