@@ -305,3 +305,11 @@ completes; the hang is in 0xF2490. That function first calls 0xF5A78
 allocates a 'QDSS'-tagged record and calls a function pointer stored at
 +0x88 of the object at RVA 0x1CD0E0 with (5, 1, ...). Next point:
 0xF24C8, right after 0xF5A78 (`out/qcpep/munch-pep-brkf24c8-test.zip`).
+
+Breakpoint at 0xF24C8: 0x101 again, so the hang is in 0xF5A78. That is the
+initialisation of the clock driver built into PEP (`PEP_CLK`, parameters
+ClockLogDefaults, ClockRailConfig, ClockAlwaysOnList, BistDependencies,
+...): attach (0x101258, id 0x10), then 0xF5D60, 0xFD198, 0xF6A40, 0xFBC00,
+0xF9768. Reading a clock controller whose power domain is off (camcc and
+videocc sit on MMCX) stalls the bus on Qualcomm, which would freeze the
+whole system as observed. Next point: 0xF5C94, after 0xF5D60 and 0xFD198.
