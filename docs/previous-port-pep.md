@@ -415,3 +415,10 @@ common failure exit of 0xF5A78. Earlier breakpoints showed the attach,
 0xF5D60, 0xFD198 and 0xF6A40 returning success, so 0xFBC00 (rail setup) or
 0xF9768 fails. Next: breakpoint at 0xF5CFC with all workarounds and the
 site code (`out/qcpep/munch-pep-t-test.zip`).
+
+Breakpoint at 0xF5CFC not reached, stop code 0xFFFF3E40 again: 0xFBC00
+returns an error. Probably a consequence of skipping 0xF49A0 (part of the
+rail table stays empty and a later check in 0xFBC00 fails). Skipping
+0xF49A0 had moved the hang to the hmss_ahb node, which runs later in the
+same function, so 0xF49A0 itself may never have hung. Next: 0xF49A0
+restored, hmss_ahb node still skipped, same breakpoint.
