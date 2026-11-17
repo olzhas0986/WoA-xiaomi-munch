@@ -10,12 +10,13 @@
   SPDX-License-Identifier: BSD-2-Clause-Patent
 **/
 
-#include <Uefi.h>
+#include <PiDxe.h>
 #include <Library/UefiLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/IoLib.h>
 #include <Library/PrintLib.h>
 #include <Library/DevicePathLib.h>
+#include <Library/DxeServicesTableLib.h>
 #include <Protocol/LoadedImage.h>
 #include <Protocol/SimpleFileSystem.h>
 #include <Guid/FileInfo.h>
@@ -24,6 +25,27 @@
 #define DISPLAY_RSC_CONFIG  0x0AF2000CULL   // display RSC DRV CONFIG
 
 STATIC EFI_FILE_PROTOCOL  *mRoot;
+
+/**
+  The display RSC page is not in the platform memory map. Map it here, after
+  the apps value is safely on disk, so a fault cannot hide that result.
+**/
+STATIC
+EFI_STATUS
+MapMmioPage (
+  IN UINT64  Address
+  )
+{
+  EFI_PHYSICAL_ADDRESS  Base = Address & ~(EFI_PHYSICAL_ADDRESS)0xFFF;
+  EFI_STATUS            Status;
+
+  Status = gDS->AddMemorySpace (EfiGcdMemoryTypeMemoryMappedIo, Base, SIZE_4KB,
+                                EFI_MEMORY_UC | EFI_MEMORY_RUNTIME);
+  if (EFI_ERROR (Status) && (Status != EFI_ACCESS_DENIED)) {
+    return Status;
+  }
+  return gDS->SetMemorySpaceAttributes (Base, SIZE_4KB, EFI_MEMORY_UC);
+}
 
 STATIC
 VOID
@@ -105,7 +127,17 @@ UefiMain (
 
   Save ("--- boot\n");
   ReadAndSave ("apps", APPS_RSC_CONFIG);
-  ReadAndSave ("display", DISPLAY_RSC_CONFIG);
+
+  Status = MapMmioPage (DISPLAY_RSC_CONFIG);
+  {
+    CHAR8  Line[64];
+    AsciiSPrint (Line, sizeof (Line), "map display page: %r\n", Status);
+    Save (Line);
+    Print (L"%a", Line);
+  }
+  if (!EFI_ERROR (Status)) {
+    ReadAndSave ("display", DISPLAY_RSC_CONFIG);
+  }
   Save ("done\n");
 
   Print (L"Starting Windows Boot Manager in 5 s\n");

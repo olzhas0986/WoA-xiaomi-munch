@@ -29,6 +29,7 @@
   PrintLib
   DevicePathLib
   DebugLib
+  DxeServicesTableLib
 
 [Protocols]
   gEfiLoadedImageProtocolGuid
