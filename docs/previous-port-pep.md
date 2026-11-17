@@ -349,3 +349,9 @@ value (ZwOpenKey/ZwQueryValueKey), so the remaining suspects are the later
 loop iterations and the tail of 0xFBC00 (node registration through
 0x1053E8, 0x1051B0, 0x108888, 0xF3C60, 0xF5618, 0xFBA90 and function
 pointers). Next point: 0xFBD10, right after the nine-rail loop.
+
+Breakpoint at 0xFBD10 reached: all nine rail iterations complete. The tail
+of 0xFBC00 registers the clock nodes `/clk/hmss_ahb` and `/clk/mmnoc_ahb`
+(0x1053E8, 0x1051B0, 0x108888 with callbacks 0xFBA90 and 0xFBB30), calls
+0xFB118, then 0xF3C60 for rails 0-3 (level 12) and 4-7 (level 11) and
+0xF5618. Next point: 0xFBFD4, before the 0xF3C60 loops.
