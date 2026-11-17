@@ -221,3 +221,17 @@ stopped.
 `port/prev-port/0002-ssdt-pep-drop-resources-missing-from-cmd-db.patch`
 (on top of 0001, without the pipa PEP0 import) removes them from PPPP.
 Firmware: `out/munch-uefi-windows35-cmddb.img`.
+
+## Result 7: past initialisation, CLOCK_WATCHDOG_TIMEOUT
+
+With windows35 the 0x14E is gone: qcpep completes initialisation. The system
+then stops with CLOCK_WATCHDOG_TIMEOUT (0x101, a processor stopped
+answering clock interrupts) and the dump hangs at 0%, so `pagefile.sys`
+stays empty and the ETW buffers of the test are never flushed.
+
+First hypothesis: once PEP is up, Windows starts using the processor idle
+states it manages, and a core that enters power collapse does not come
+back. Test: the same run with idle states disabled
+(`powercfg` SUB_PROCESSOR IDLEDISABLE = 1). If the hang disappears, the idle
+state description (CPU `_LPI`, CTPM) or PSCI is the next target; if not,
+the RPMh path (display RSC without active TCS) is.
