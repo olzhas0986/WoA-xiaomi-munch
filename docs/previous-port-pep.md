@@ -280,3 +280,10 @@ tools/package_pep_disptcs.py munch-pep-lmh-test.zip out/qcpep/qcpep8250-brk21523
     --tags out/qcpep/unsuccessful-tags.json --no-lmh-mmio --brk-offset 203a30 \
     -o out/qcpep/munch-pep-brk215230-test.zip
 ```
+
+Result: 0x101 again, so the hang is inside 0x1DB000 after the PPP framework.
+(The previous port's 0x101 was different: one core hung in the LMh helper
+and the dump completed; now the whole system stops and the dump does not
+start.) Next point: RVA 0x1DBA24, between 0x1F990 and 0x1D148, which splits
+the about twenty remaining calls of 0x1DB000 in half
+(`out/qcpep/munch-pep-brk1dba24-test.zip`).
