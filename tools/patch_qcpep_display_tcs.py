@@ -38,7 +38,7 @@ hung before reaching RVA.
 
 --ret0-at RVA (repeatable) replaces the first two instructions of the
 function at RVA with `mov w0, #0; ret`, so it returns success at once. The
-function must start with a `stp ..., [sp, #-N]!` prologue.
+function must start with a pre-indexed `stp`/`str` to sp.
 
 --tag-unsuccessful FILE gives every `orr wN, wzr, #0xC0000001` (STATUS_UNSUCCESSFUL)
 between RVA 0x100000 and 0x130000 its own status value, still an error with
@@ -190,8 +190,9 @@ def main():
     for rva in args.ret0_at:
         off = rva_to_offset(secs, rva)
         insn = struct.unpack_from("<I", data, off)[0]
-        if insn & 0xFFC003E0 != 0xA98003E0:   # stp xA, xB, [sp, #-N]!
-            sys.exit(f"RVA {rva:#x} does not start with a pre-indexed stp ({insn:#010x})")
+        # stp xA, xB, [sp, #-N]!  or  str xA, [sp, #-N]!
+        if insn & 0xFFC003E0 != 0xA98003E0 and insn & 0xFFE00FE0 != 0xF8000FE0:
+            sys.exit(f"RVA {rva:#x} does not start with a pre-indexed stp/str ({insn:#010x})")
         data[off:off + 8] = RET0
         print(f"RET0 at RVA {rva:#x} (file offset {off:#x})")
 

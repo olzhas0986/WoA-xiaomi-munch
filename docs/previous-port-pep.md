@@ -326,3 +326,17 @@ Prepared for the case that 0xF6A40 is the hang: without it the clock driver
 keeps its table defaults instead of reading every domain's current
 configuration back from the hardware
 (`out/qcpep/munch-pep-nodetect-test.zip`, no breakpoint).
+
+Breakpoint at 0xF5CFC: 0x101, so the hang is in 0xFBC00, the clock driver's
+rail setup. For each of nine rails it calls 0xF49A0, 0xF4CD8 (table work
+only) and 0xFC820 (reads a registry value). 0xF49A0 and its helper 0xFE8A0
+read the current rail state with raw 32-bit MMIO loads (0xFE678) at
+`[0x1D5BC8] + 0xB23110/0xB23114 + n*0x20` for rail 0, `+0xB25910/...914`
+for rail 1, and so on, and store bit fields into the rail table. A stalled
+load there freezes the system.
+
+## Attempt 10: no rail state read-back
+
+`--ret0-at f49a0` makes 0xF49A0 return 0 without reading anything
+(`out/qcpep/munch-pep-norailread-test.zip`, no breakpoint). If init then
+completes, the rail block behind `[0x1D5BC8]` is the one to identify.
