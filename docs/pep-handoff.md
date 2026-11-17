@@ -321,3 +321,25 @@ none of that, so the GPU would have to be powered by other means (UEFI or a
 small driver: RPMh votes for the rails, `gpucc-sm8250` clocks and GDSCs),
 and its firmware loading (`IOCTL_PIL_TZ_*`, zap shader) would have to work
 with the Android TrustZone.
+
+### GPU perf-state registration
+
+`qcdxkm8250.sys` calls `PoFxRegisterComponentPerfStates` once (RVA
+0x284738):
+
+```
+x0 = [ctx + 0x4570]   ; POHANDLE
+w1 = component
+x2 = 6                ; PO_FX_FLAG_PERF_QUERY_ON_F0 | PO_FX_FLAG_PERF_QUERY_ON_ALL_IDLE_STATES
+x3 = callback (RVA 0x92C0)
+x4 = own PO_FX_COMPONENT_PERF_INFO, built from its configuration
+x5 = NULL             ; no OutputStateInfo
+```
+
+and treats a failure as fatal. `PO_FX_FLAG_PERF_PEP_OPTIONAL` (bit 0) is
+**not** set, so the call only succeeds if a PEP registered with PoFx accepts
+the GPU device and supports performance states for it. A stub that only
+publishes `{55beca03}` / `{a0e1dd36}` is not enough for the GPU; it needs a
+PoFx plugin (`PoFxRegisterPluginEx`) that accepts the GPU device and handles
+the perf-state notifications. The driver supplies its own perf-state table,
+so the plugin does not have to.
