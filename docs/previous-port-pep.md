@@ -313,3 +313,10 @@ ClockLogDefaults, ClockRailConfig, ClockAlwaysOnList, BistDependencies,
 0xF9768. Reading a clock controller whose power domain is off (camcc and
 videocc sit on MMCX) stalls the bus on Qualcomm, which would freeze the
 whole system as observed. Next point: 0xF5C94, after 0xF5D60 and 0xFD198.
+
+Breakpoint at 0xF5C94 reached (0x7E): 0xF5D60 and 0xFD198 complete. The
+hang is in 0xF6A40, 0xFBC00 or 0xF9768. 0xF6A40 walks every clock domain
+of the driver's table and calls each domain's hardware ops (+0x30, +0x40)
+to read back its current configuration, i.e. it reads the RCG registers of
+every clock controller. Next point: 0xF5CC8, after 0xF6A40
+(`out/qcpep/munch-pep-brkf5cc8-test.zip`).
