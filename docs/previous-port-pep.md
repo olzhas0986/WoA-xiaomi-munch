@@ -355,3 +355,9 @@ of 0xFBC00 registers the clock nodes `/clk/hmss_ahb` and `/clk/mmnoc_ahb`
 (0x1053E8, 0x1051B0, 0x108888 with callbacks 0xFBA90 and 0xFBB30), calls
 0xFB118, then 0xF3C60 for rails 0-3 (level 12) and 4-7 (level 11) and
 0xF5618. Next point: 0xFBFD4, before the 0xF3C60 loops.
+
+Breakpoint at 0xFBFD4 not reached: the hang is in the node setup of
+`/clk/hmss_ahb` / `/clk/mmnoc_ahb` or in 0xFB118. 0x108888 registers an
+availability callback (0xFBA90, 0xFBB30); each creates a client
+(0x103098) and issues a request (0x103378), i.e. turns that clock on as
+soon as the node exists. Next point: 0xFBF38, between the two nodes.
