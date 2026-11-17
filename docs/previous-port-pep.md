@@ -361,3 +361,6 @@ Breakpoint at 0xFBFD4 not reached: the hang is in the node setup of
 availability callback (0xFBA90, 0xFBB30); each creates a client
 (0x103098) and issues a request (0x103378), i.e. turns that clock on as
 soon as the node exists. Next point: 0xFBF38, between the two nodes.
+
+Breakpoint at 0xFBF38 reached: `/clk/hmss_ahb` is fine. Next point:
+0xFBFB8, after `/clk/mmnoc_ahb` and before 0xFB118.
