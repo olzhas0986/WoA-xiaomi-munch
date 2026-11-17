@@ -23,12 +23,18 @@ on the target, with test signing enabled.
 two BL calls to helper RVA 0x5c50 at RVA 0x1df358 and 0x21555c become NOPs
 (the crash that followed it is the one this patch addresses).
 
+--tag-unsuccessful FILE gives every `orr wN, wzr, #0xC0000001` (STATUS_UNSUCCESSFUL)
+between RVA 0x100000 and 0x130000 its own status value, still an error with
+bit 31 set, and writes the value -> RVA map to FILE. A crash dump then shows
+which site produced the failing status (tools/pep_dump_status.py --tags).
+
 Examples:
     patch_qcpep_display_tcs.py qcpep8250.sys -o out/qcpep8250-disptcs.sys
     patch_qcpep_display_tcs.py qcpep8250.sys --with-lmh -o out/qcpep8250-lmh-disptcs.sys
 """
 import argparse
 import hashlib
+import json
 import struct
 import sys
 
@@ -65,6 +71,30 @@ def rva_to_offset(secs, rva):
     sys.exit(f"RVA {rva:#x} is not in any section")
 
 
+def bitmask_values():
+    """32-bit ORR bitmask immediates with bit 31 set, other than 0xC0000001."""
+    for ones in range(3, 31):
+        for rot in range(1, ones):
+            value = ((1 << ones) - 1)
+            value = ((value >> rot) | (value << (32 - rot))) & 0xFFFFFFFF
+            if value != 0xC0000001 and value >> 31:
+                yield ones, rot, value
+
+
+def tag_unsuccessful(data, secs):
+    tags, values = {}, bitmask_values()
+    for rva in range(0x100000, 0x130000, 4):
+        off = rva_to_offset(secs, rva)
+        insn = struct.unpack_from("<I", data, off)[0]
+        if insn & ~0x1F != 0x32020BE0:      # orr wN, wzr, #0xC0000001
+            continue
+        ones, rot, value = next(values)
+        new = 0x32000000 | (rot << 16) | ((ones - 1) << 10) | (31 << 5) | (insn & 0x1F)
+        struct.pack_into("<I", data, off, new)
+        tags[f"{value:#010x}"] = {"rva": f"{rva:#x}", "offset": off, "reg": f"w{insn & 0x1F}"}
+    return tags
+
+
 def pe_checksum(data, checksum_offset):
     total = 0
     for i in range(0, len(data) - len(data) % 2, 2):
@@ -84,6 +114,8 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("sys_file")
     ap.add_argument("-o", "--out", required=True)
+    ap.add_argument("--tag-unsuccessful", metavar="JSON",
+                    help="give each STATUS_UNSUCCESSFUL site a unique status; write the map")
     ap.add_argument("--with-lmh", action="store_true",
                     help="also NOP the two LMH helper calls (previous port's diagnostic)")
     args = ap.parse_args()
@@ -117,6 +149,12 @@ def main():
                 sys.exit(f"RVA {rva:#x} is not BL {LMH_TARGET:#x}")
             data[off:off + 4] = NOP
             print(f"LMH: BL {LMH_TARGET:#x} at RVA {rva:#x} -> NOP")
+
+    if args.tag_unsuccessful:
+        tags = tag_unsuccessful(data, secs)
+        with open(args.tag_unsuccessful, "w") as f:
+            json.dump(tags, f, indent=2)
+        print(f"tagged {len(tags)} STATUS_UNSUCCESSFUL sites -> {args.tag_unsuccessful}")
 
     # drop the Authenticode signature: security directory is data directory 4
     opt = pe + 24

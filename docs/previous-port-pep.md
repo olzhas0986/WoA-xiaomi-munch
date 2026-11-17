@@ -160,3 +160,27 @@ tools/import_pipa_pep0.py pipa/Decompiled/DSDT.dsl <SSDT with 0001 applied> -o S
 Firmware: `out/munch-uefi-windows34-pep0.img`. Rollback: the windows33
 firmware (`out/munch-uefi-windows33-pprr.img`), whose SSDT is the 0001 patch
 alone.
+
+## Result 4: same status with the full PEP0
+
+windows34 (full pipa PEP0) stopped the same way: 0x14E, `InitializePppFramework`,
+status `0xC0000001`. The missing PEP0 configuration is therefore not the cause.
+`pep_dump_status.py` now derives the driver base from the return addresses on
+the captured stack instead of assuming the low bits match the RVA.
+
+## Attempt 5: tagged STATUS_UNSUCCESSFUL sites
+
+33 instructions between RVA 0x100000 and 0x130000 load `0xC0000001`. With
+`--tag-unsuccessful` each gets its own failure value (an ORR bitmask
+immediate with bit 31 set; none of the 33 values occurs anywhere in the
+original driver, so no comparison changes):
+
+```sh
+tools/patch_qcpep_display_tcs.py qcpep8250.sys --with-lmh \
+    --tag-unsuccessful out/qcpep/unsuccessful-tags.json -o out/qcpep/qcpep8250-lmh-disptcs-tagged.sys
+tools/package_pep_disptcs.py munch-pep-lmh-test.zip out/qcpep/qcpep8250-lmh-disptcs-tagged.sys \
+    --tags out/qcpep/unsuccessful-tags.json -o out/qcpep/munch-pep-lmh-disptcs-tagged-test.zip
+tools/pep_dump_status.py pep.dmp --tags=out/qcpep/unsuccessful-tags.json
+```
+
+The next dump names the exact site that produced the failing status.

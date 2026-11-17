@@ -53,6 +53,8 @@ def main():
     ap.add_argument("package")
     ap.add_argument("driver")
     ap.add_argument("-o", "--out", required=True)
+    ap.add_argument("--tags", metavar="JSON",
+                    help="also allow the STATUS_UNSUCCESSFUL tag patches listed in this map")
     args = ap.parse_args()
 
     with zipfile.ZipFile(args.package) as z:
@@ -64,7 +66,11 @@ def main():
     if len(new) != len(old):
         sys.exit("driver sizes differ")
     diff = [i for i in range(len(new)) if new[i] != old[i]]
-    unexpected = [i for i in diff if i not in CHECKSUM and i != TCS_OFFSET]
+    tagged = set()
+    if args.tags:
+        for t in json.load(open(args.tags)).values():
+            tagged.update(range(t["offset"], t["offset"] + 4))
+    unexpected = [i for i in diff if i not in CHECKSUM and i != TCS_OFFSET and i not in tagged]
     if unexpected or TCS_OFFSET not in diff or (old[TCS_OFFSET], new[TCS_OFFSET]) != (4, 2):
         sys.exit(f"driver differs from the LMH copy in unexpected places: {[hex(i) for i in unexpected]}")
 
