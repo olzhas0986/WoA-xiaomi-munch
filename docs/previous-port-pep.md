@@ -287,3 +287,12 @@ and the dump completed; now the whole system stops and the dump does not
 start.) Next point: RVA 0x1DBA24, between 0x1F990 and 0x1D148, which splits
 the about twenty remaining calls of 0x1DB000 in half
 (`out/qcpep/munch-pep-brk1dba24-test.zip`).
+
+Result: 0x101 with the breakpoint at 0x1DBA24 and at 0x1DB7DC, so the hang
+is in one of the first two calls after the PPP framework: 0x72848 or
+0xF2490. 0x72848 creates two RPMh clients from the table at RVA 0x1C0710,
+`vdd_arc_hlos` on the apps RSC (id 2) and `vdd_arc_display` on the display
+RSC (id 9, the controller whose TCS requirement was lowered from 4 to 2),
+resolves `cx.lvl`, `mx.lvl`, `xo.lvl`, `mmcx.lvl` in the Command DB and
+registers them (0x105EF8, 0x25268). Next point: 0x1DB56C, between the two
+calls (`out/qcpep/munch-pep-brk1db56c-test.zip`).
