@@ -11,6 +11,7 @@ Everything else in the package is kept byte-for-byte. Checks:
   * the input package carries the expected LMH driver (sha256 pinned);
   * the new driver differs from it only in the PE checksum and in the display
     record's TCS field (file offset 0x19DD84: 4 -> 2);
+  * test.ps1 accepts an SSDT up to 4 MiB instead of 64 KiB;
   * patch.json gets the new unsigned hash and the extra change; SHA256.json
     is regenerated for the files it lists.
 
@@ -77,6 +78,14 @@ def main():
     files[SYS_NAME] = new
     files[PREFIX + "patch.json"] = (json.dumps(patch, indent=2) + "\n").encode()
     files[PREFIX + "README-disptcs.md"] = NOTE.encode()
+    # test.ps1 reads the SSDT only if it is <= 64 KiB; the PEP0 configuration
+    # imported from pipa makes it ~267 KiB
+    test = files[PREFIX + "test.ps1"].decode("latin-1")
+    old_limit = 'n>65536)throw new Exception("Cannot read SSDT")'
+    if test.count(old_limit) != 1:
+        sys.exit("test.ps1: SSDT size check not found")
+    files[PREFIX + "test.ps1"] = test.replace(
+        old_limit, 'n>4194304)throw new Exception("Cannot read SSDT")').encode("latin-1")
     listing = json.loads(files[PREFIX + "SHA256.json"])
     for name in listing:
         listing[name] = sha(files[PREFIX + name])
