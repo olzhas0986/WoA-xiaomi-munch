@@ -4,6 +4,10 @@
   application was loaded from before attempting the next read. If a read
   hangs the bus, the values read before it are already on disk.
 
+  Before that, the RPMh Command DB (AOP reserved memory 0x80860000, 128 KiB,
+  in the platform memory map) is copied to \cmddb.bin; qcpep8250 looks up
+  every PEP resource there.
+
   Afterwards the Windows boot manager is started from the same volume, so the
   application can sit at \EFI\Boot\bootaa64.efi without breaking boot.
 
@@ -23,6 +27,8 @@
 
 #define APPS_RSC_CONFIG     0x1822000CULL   // apps RSC DRV2 CONFIG
 #define DISPLAY_RSC_CONFIG  0x0AF2000CULL   // display RSC DRV CONFIG
+#define CMD_DB_BASE         0x80860000ULL   // reserved-memory "qcom,cmd-db"
+#define CMD_DB_SIZE         0x20000
 
 STATIC EFI_FILE_PROTOCOL  *mRoot;
 
@@ -80,6 +86,32 @@ Save (
 }
 
 STATIC
+EFI_STATUS
+DumpCmdDb (
+  VOID
+  )
+{
+  EFI_FILE_PROTOCOL  *File;
+  UINTN              Size;
+  EFI_STATUS         Status;
+
+  if (mRoot == NULL) {
+    return EFI_NOT_READY;
+  }
+  Status = mRoot->Open (mRoot, &File, L"\\cmddb.bin",
+                        EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_CREATE, 0);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+  File->SetPosition (File, 0);
+  Size   = CMD_DB_SIZE;
+  Status = File->Write (File, &Size, (VOID *)(UINTN)CMD_DB_BASE);
+  File->Flush (File);
+  File->Close (File);
+  return Status;
+}
+
+STATIC
 VOID
 ReadAndSave (
   IN CONST CHAR8  *Name,
@@ -126,6 +158,13 @@ UefiMain (
   }
 
   Save ("--- boot\n");
+  Status = DumpCmdDb ();
+  {
+    CHAR8  Line[64];
+    AsciiSPrint (Line, sizeof (Line), "cmd-db dump: %r\n", Status);
+    Save (Line);
+    Print (L"%a", Line);
+  }
   ReadAndSave ("apps", APPS_RSC_CONFIG);
 
   Status = MapMmioPage (DISPLAY_RSC_CONFIG);

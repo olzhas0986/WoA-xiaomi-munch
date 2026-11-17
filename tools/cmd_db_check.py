@@ -14,16 +14,20 @@ SMPSn_X -> smpXn, LDOn_X -> ldoXn, VSn_X -> vsXn, BUCK_BOOSTn_X -> bobXn,
 CXO_BUFFERS_BBCLKn_X -> lnbclkXn, _RFCLKn_X -> rfclkXn, _DIVCLKn_X -> divclkXn.
 GPIO DV resources are not looked up.
 
-The Command DB text comes from the Linux debugfs file, e.g. in TWRP:
-
-    adb shell 'mount -t debugfs none /sys/kernel/debug; cat /sys/kernel/debug/cmd-db' > cmd-db.txt
+Input is either the Linux debugfs text (/sys/kernel/debug/cmd-db) or the raw
+reserved region (128 KiB at 0x80860000 on munch) that RpmhPeek saves as
+\\cmddb.bin on the ESP.
 
 Example:
     cmd_db_check.py cmd-db.txt SSDT-GPU-PEP.asl
 """
 import argparse
 import re
+import struct
 import sys
+
+CMD_DB_MAGIC = bytes([0xDB, 0x30, 0x03, 0x0C])
+SLAVES = {3: "ARC", 4: "VRM", 5: "BCM"}
 
 RULES = [
     (r"SMPS(\d+)_([A-Z])$", "smp{1}{0}"),
@@ -62,16 +66,39 @@ def parse_debugfs(text):
     return entries
 
 
+def parse_binary(data):
+    """Layout as in Linux drivers/soc/qcom/cmd-db.c and qcpep RVA 0x114600."""
+    if data[4:8] != CMD_DB_MAGIC:
+        sys.exit(f"bad Command DB magic {data[4:8].hex()}")
+    entries = {}
+    for i in range(8):
+        slv, hoff, doff, cnt, ver = struct.unpack_from("<5H", data, 8 + 16 * i)
+        if not cnt:
+            continue
+        for j in range(cnt):
+            o = 0x90 + hoff + 24 * j
+            ident = data[o:o + 8].split(b"\0")[0].decode("latin-1")
+            addr, length, aoff = struct.unpack_from("<IHH", data, o + 16)
+            a = 0x90 + doff + aoff
+            entries[ident] = (SLAVES.get(slv, str(slv)), ver, addr, data[a:a + length])
+    return entries
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd_db", help="debugfs cmd-db dump")
     ap.add_argument("ssdt", help="ASL with the PPPP package")
+    ap.add_argument("--list", action="store_true", help="also print every Command DB entry")
     args = ap.parse_args()
 
-    db = parse_debugfs(open(args.cmd_db, errors="replace").read())
+    raw = open(args.cmd_db, "rb").read()
+    db = parse_binary(raw) if raw[4:8] == CMD_DB_MAGIC else parse_debugfs(raw.decode("latin-1"))
     if not db:
         sys.exit("no Command DB entries parsed")
+    if args.list:
+        for k, (slave, ver, addr, aux) in sorted(db.items(), key=lambda e: e[1][2]):
+            print(f"{slave:4} v{ver >> 8}.{ver & 0xff} {addr:#07x} {k:10} {aux.hex()}")
     asl = open(args.ssdt).read()
     block = asl[asl.index("Name (PPPP"):]
     block = block[:block.index("})")]
