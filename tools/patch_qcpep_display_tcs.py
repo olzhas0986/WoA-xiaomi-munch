@@ -30,6 +30,12 @@ there) into a bare RET: RVA 0x5520 (status read, result unused), 0x5B20 and
 sites). After PEP initialisation succeeded the system hung with
 CLOCK_WATCHDOG_TIMEOUT, as the previous port did inside 0x5C50.
 
+--brk-at RVA replaces the instruction at RVA with `brk #0xF000`. Without a
+debugger the kernel stops with KMODE_EXCEPTION_NOT_HANDLED (0x1E, 0x80000003)
+when execution gets there, which writes a normal dump. Used to bisect a hang
+that leaves no dump: 0x1E means the code got past the hang, 0x101 that it
+hung before reaching RVA.
+
 --tag-unsuccessful FILE gives every `orr wN, wzr, #0xC0000001` (STATUS_UNSUCCESSFUL)
 between RVA 0x100000 and 0x130000 its own status value, still an error with
 bit 31 set, and writes the value -> RVA map to FILE. A crash dump then shows
@@ -58,6 +64,7 @@ LMH_CALLS = (0x1DF358, 0x21555C)
 LMH_TARGET = 0x5C50
 NOP = bytes.fromhex("1f2003d5")
 RET = bytes.fromhex("c0035fd6")
+BRK = bytes.fromhex("00003ed4")      # brk #0xf000
 # function entry RVA -> expected first instruction
 LMH_FUNCS = {0x5520: "fd7bbda9", 0x5B20: "fd7bbea9", 0x5B88: "fd7bbda9", 0x5C50: "fd7bbda9"}
 
@@ -126,6 +133,8 @@ def main():
     ap.add_argument("-o", "--out", required=True)
     ap.add_argument("--tag-unsuccessful", metavar="JSON",
                     help="give each STATUS_UNSUCCESSFUL site a unique status; write the map")
+    ap.add_argument("--brk-at", metavar="RVA", type=lambda v: int(v, 16),
+                    help="replace the instruction at RVA (hex) with brk #0xf000")
     ap.add_argument("--no-lmh-mmio", action="store_true",
                     help="make the four LMh register functions return immediately")
     ap.add_argument("--with-lmh", action="store_true",
@@ -170,6 +179,11 @@ def main():
                 sys.exit(f"RVA {rva:#x} starts with {got}, expected {want}")
             data[off:off + 4] = RET
             print(f"LMh: RVA {rva:#x} -> RET (file offset {off:#x})")
+
+    if args.brk_at is not None:
+        off = rva_to_offset(secs, args.brk_at)
+        print(f"BRK at RVA {args.brk_at:#x} (file offset {off:#x}), was {data[off:off + 4].hex()}")
+        data[off:off + 4] = BRK
 
     if args.tag_unsuccessful:
         tags = tag_unsuccessful(data, secs)

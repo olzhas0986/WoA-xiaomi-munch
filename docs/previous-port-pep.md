@@ -259,3 +259,24 @@ tools/package_pep_disptcs.py munch-pep-lmh-test.zip out/qcpep/qcpep8250-lmh-disp
 ```
 
 Firmware stays windows35.
+
+Result: same 0x101, dump stuck at 0%. The ETL files hold only the logfile
+header although the session flushes every second, so the whole system stops
+almost at once and nothing reaches the disk.
+
+## Attempt 9: bisect with a breakpoint
+
+`--brk-at RVA` puts `brk #0xF000` at RVA; reaching it gives
+KMODE_EXCEPTION_NOT_HANDLED (0x1E) and a normal dump. First point: RVA
+0x215230, the success branch after the core init 0x1DB000 (which contains
+InitializePppFramework) in the PEP start routine 0x214C18. 0x1E means the
+hang is after it (0x20ACB0, 0x7F9F8, ... or the runtime), 0x101 that it is
+inside 0x1DB000 after the PPP framework.
+
+```sh
+tools/patch_qcpep_display_tcs.py qcpep8250.sys --with-lmh --no-lmh-mmio --brk-at 215230 \
+    --tag-unsuccessful out/qcpep/unsuccessful-tags.json -o out/qcpep/qcpep8250-brk215230.sys
+tools/package_pep_disptcs.py munch-pep-lmh-test.zip out/qcpep/qcpep8250-brk215230.sys \
+    --tags out/qcpep/unsuccessful-tags.json --no-lmh-mmio --brk-offset 203a30 \
+    -o out/qcpep/munch-pep-brk215230-test.zip
+```
