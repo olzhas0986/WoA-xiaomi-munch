@@ -288,3 +288,36 @@ path is SC8180X rather than SM8150. Both checks it proposed confirm this.
 Consequence: the clock part of this qcpep8250 build programs SC8180X
 registers. Every further step would hit another 8cx block, and the GPU power
 path (clocks at the SC8180X GPU address) cannot work on Kona.
+
+## 10. Follow-up: alioth-woa-drivers and what the Kona drivers need from PEP
+
+[jungdesign/alioth-woa-drivers](https://github.com/jungdesign/alioth-woa-drivers)
+(POCO F3, SM8250, experimental, Oct 2026) replaces PEP with `qcfakepep`, a
+plain WDM function driver for PEP0 that
+
+- publishes the device interface `{55beca03-ba2c-4fbc-9efc-ee8eca56f0c7}`;
+- answers `IRP_MN_QUERY_INTERFACE` for `{a0e1dd36-dfb9-4c0e-bbaa-78f0746be181}`
+  (size 0x28, version 1, one function that returns STATUS_SUCCESS);
+- passes everything else down to the ACPI PDO and touches no hardware.
+
+Its EPSS addresses are written as 0x185910000 / 0x185920000 (nine digits,
+which is DRAM); SM8250 EPSS is at 0x18591000 / 0x18592000 / 0x18593000, and
+domain 0 is the A55 cluster. The README's claims (audio chain unlocked,
+GPU dependency lifted) are the author's and unverified here.
+
+Checked against the Kona BSP binaries:
+
+| GUID | Drivers that contain it |
+|:--|:--|
+| `{55beca03}` SoC device interface | qcpep8250, qcdxkm8250 (+ rs3, ti variants), qcsmmu8250 (+ rs3), qcqdss8250, qcsubsys8250 |
+| `{a0e1dd36}` PEP query interface | qcpep8250, qcsmmu8250, qcqdss8250, qcsubsys8250 |
+
+The GPU kernel driver looks up the SoC device interface but not the
+`{a0e1dd36}` query interface. It drives its power through PoFx
+(`PoFxRegisterComponentPerfStates`, `PoFxIssueComponentPerfStateChange`),
+which a real PEP turns into clocks, footswitches and rail votes using the
+GPU packages in the SSDT. A stub that only publishes the interfaces does
+none of that, so the GPU would have to be powered by other means (UEFI or a
+small driver: RPMh votes for the rails, `gpucc-sm8250` clocks and GDSCs),
+and its firmware loading (`IOCTL_PIL_TZ_*`, zap shader) would have to work
+with the Android TrustZone.
