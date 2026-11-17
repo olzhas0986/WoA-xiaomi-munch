@@ -409,3 +409,9 @@ stop code. Five instructions before KeBugCheckEx in 0x101E80 become
 so the stop code no longer depends on the load address.
 `tools/pep_fatal_site.py qcpep8250.sys <code>` maps it back to the call
 site and its message (`--all` lists all 350).
+
+Stop code 0xFFFF3E40: call at RVA 0xF5D5C, message `Clock_DriverInit`, the
+common failure exit of 0xF5A78. Earlier breakpoints showed the attach,
+0xF5D60, 0xFD198 and 0xF6A40 returning success, so 0xFBC00 (rail setup) or
+0xF9768 fails. Next: breakpoint at 0xF5CFC with all workarounds and the
+site code (`out/qcpep/munch-pep-t-test.zip`).
