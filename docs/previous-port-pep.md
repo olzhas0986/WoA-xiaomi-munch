@@ -340,3 +340,12 @@ load there freezes the system.
 `--ret0-at f49a0` makes 0xF49A0 return 0 without reading anything
 (`out/qcpep/munch-pep-norailread-test.zip`, no breakpoint). If init then
 completes, the rail block behind `[0x1D5BC8]` is the one to identify.
+
+With 0xF49A0 skipped the hang moved later and no longer ends in a bugcheck
+(1-2 minutes without 0x101). The breakpoint at 0xF5CFC is still not
+reached, at 0xFBCCC (after 0xF4CD8 for rail 0) it is. 0xF4CD8 only works on
+the rail table (both loops bounded at 40) and 0xFC820 reads a registry
+value (ZwOpenKey/ZwQueryValueKey), so the remaining suspects are the later
+loop iterations and the tail of 0xFBC00 (node registration through
+0x1053E8, 0x1051B0, 0x108888, 0xF3C60, 0xF5618, 0xFBA90 and function
+pointers). Next point: 0xFBD10, right after the nine-rail loop.
