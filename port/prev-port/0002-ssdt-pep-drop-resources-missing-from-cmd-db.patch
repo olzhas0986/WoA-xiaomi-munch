@@ -1,0 +1,44 @@
+--- a/firmware/munch/Acpi/SSDT-GPU-PEP.asl
++++ b/firmware/munch/Acpi/SSDT-GPU-PEP.asl
+@@ -192,18 +192,17 @@
+             // taken from the Qualcomm SDM8250 DSDT of Xiaomi pipa (SM8250-AC, same
+             // PM8150/PM8150B/PM8150L set), written for this newer PEP generation;
+             // every name was checked against the driver's resource tables.
+-            Name (PPPP, Package (0x39)
++            // Resources without a Command DB entry on munch (smpa1, smpa2, smpc2,
++            // smpc5, ldoa8, rfclka2, divclka1, divclka2) are left out: qcpep looks
++            // every non-GPIO PPPM resource up there and fails init if one is missing.
++            Name (PPPP, Package (0x31)
+             {
+-                Package (0x01) { "PPP_RESOURCE_ID_SMPS1_A" },
+-                Package (0x01) { "PPP_RESOURCE_ID_SMPS2_A" },
+                 Package (0x01) { "PPP_RESOURCE_ID_SMPS3_A" },
+                 Package (0x01) { "PPP_RESOURCE_ID_SMPS4_A" },
+                 Package (0x01) { "PPP_RESOURCE_ID_SMPS5_A" },
+                 Package (0x01) { "PPP_RESOURCE_ID_SMPS6_A" },
+                 Package (0x01) { "PPP_RESOURCE_ID_SMPS1_C" },
+-                Package (0x01) { "PPP_RESOURCE_ID_SMPS2_C" },
+                 Package (0x01) { "PPP_RESOURCE_ID_SMPS4_C" },
+-                Package (0x01) { "PPP_RESOURCE_ID_SMPS5_C" },
+                 Package (0x01) { "PPP_RESOURCE_ID_SMPS6_C" },
+                 Package (0x01) { "PPP_RESOURCE_ID_SMPS8_C" },
+                 Package (0x01) { "PPP_RESOURCE_ID_LDO1_A" },
+@@ -213,7 +212,6 @@
+                 Package (0x01) { "PPP_RESOURCE_ID_LDO5_A" },
+                 Package (0x01) { "PPP_RESOURCE_ID_LDO6_A" },
+                 Package (0x01) { "PPP_RESOURCE_ID_LDO7_A" },
+-                Package (0x01) { "PPP_RESOURCE_ID_LDO8_A" },
+                 Package (0x01) { "PPP_RESOURCE_ID_LDO9_A" },
+                 Package (0x01) { "PPP_RESOURCE_ID_LDO10_A" },
+                 Package (0x01) { "PPP_RESOURCE_ID_LDO11_A" },
+@@ -239,10 +237,7 @@
+                 Package (0x01) { "PPP_RESOURCE_ID_CXO_BUFFERS_BBCLK2_A" },
+                 Package (0x01) { "PPP_RESOURCE_ID_CXO_BUFFERS_BBCLK3_A" },
+                 Package (0x01) { "PPP_RESOURCE_ID_CXO_BUFFERS_RFCLK1_A" },
+-                Package (0x01) { "PPP_RESOURCE_ID_CXO_BUFFERS_RFCLK2_A" },
+                 Package (0x01) { "PPP_RESOURCE_ID_CXO_BUFFERS_RFCLK3_A" },
+-                Package (0x01) { "PPP_RESOURCE_ID_CXO_BUFFERS_DIVCLK1_A" },
+-                Package (0x01) { "PPP_RESOURCE_ID_CXO_BUFFERS_DIVCLK2_A" },
+                 Package (0x01) { "PPP_RESOURCE_ID_CXO_BUFFERS_DIVCLK1_C" },
+                 Package (0x01) { "PPP_RESOURCE_ID_BUCK_BOOST1_C" },
+                 Package (0x01) { "PPP_RESOURCE_ID_PMIC_GPIO_DV1" },

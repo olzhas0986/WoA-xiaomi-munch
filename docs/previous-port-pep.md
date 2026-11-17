@@ -208,3 +208,16 @@ tools/cmd_db_check.py out/cmd-db.txt work/prev-port/firmware/munch/Acpi/SSDT-GPU
 
 Resources reported as MISSING or FAIL are dropped from PPPP (and the PPRR
 ranges narrowed if needed).
+
+## Result 6: Command DB on munch
+
+`RpmhPeek` saved the Command DB (`\cmddb.bin`). `tools/cmd_db_check.py`
+shows 8 of the 51 non-GPIO pipa resources have no entry on munch:
+`smpa1`, `smpa2`, `smpc2`, `smpc5`, `ldoa8`, `rfclka2`, `divclka1`,
+`divclka2`. All others are VRM v1.0 with 4 bytes of aux data, as qcpep
+requires. `smpa1` is the first resource classified, which is where init
+stopped.
+
+`port/prev-port/0002-ssdt-pep-drop-resources-missing-from-cmd-db.patch`
+(on top of 0001, without the pipa PEP0 import) removes them from PPPP.
+Firmware: `out/munch-uefi-windows35-cmddb.img`.
