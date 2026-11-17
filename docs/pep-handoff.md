@@ -256,3 +256,35 @@ the bus and freezes every core.
    register access the Android firmware does not grant, is patching
    `qcpep8250` realistic, or is a minimal PEP (processor idle + device power
    via RPMh only) the better path towards running the Adreno driver?
+
+## 9. Follow-up: the clock part is SC8180X (8cx)
+
+An external review pointed out that the "rail" tables match the SC8180X OSM
+(cpufreq-hw) LUT layout with base = 0x17800000, and that "8180" in the PDB
+path is SC8180X rather than SM8150. Both checks it proposed confirm this.
+
+- **Region table.** At RVA 0x19E3E0 in `.data` the driver keeps
+  `{physical address, size, &global}` triples that the clock driver maps:
+
+  | Physical | Size | Global (RVA) | On SC8180X |
+  |:--|:--|:--|:--|
+  | 0x17800000 | 0xC32000 | 0x1D5BC8 | APSS: OSM at 0x18321000/0x18323000/0x18325800, LMh |
+  | 0x00100000 | 0x200000 | 0x1D5BD8 | GCC |
+  | 0x02C00000 | 0x0D4000 | 0x1D5BC0 | GPU (on SM8250 the GPU is at 0x03D00000) |
+  | 0x0AE00000 | 0x200000 | 0x1D5BE0 | display |
+  | 0x09800000 | 0x800000 | 0x1D5BB8 | NPU |
+  | 0x0AC00000 | 0x110000 | 0x1D5BB0 | camera / video |
+  | 0x0AA00000 | 0x200000 | 0x1D5BD0 | video |
+
+  The rail read-back therefore reads the OSM frequency/voltage LUT at
+  0x18323110 (cluster 0), 0x18325910 (cluster 1) and 0x18321118 (L3). SM8250
+  has EPSS at 0x18590000–0x18593000 instead of OSM, so nothing answers at
+  0x1832xxxx and the first load stalls.
+- **GCC clock names.** Of the 240 GCC clock names in the driver, 112 exist on
+  both chips (per Linux `gcc-sm8250.c` / `gcc-sc8180x.c`), 35 only on SC8180X
+  (UFS card 2, EMAC, USB3 MP, PCIe 3, QSPI 1, GP4/5) and 11 only on SM8250.
+  The embedded clock driver describes the SC8180X GCC.
+
+Consequence: the clock part of this qcpep8250 build programs SC8180X
+registers. Every further step would hit another 8cx block, and the GPU power
+path (clocks at the SC8180X GPU address) cannot work on Kona.
