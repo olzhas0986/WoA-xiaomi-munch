@@ -387,3 +387,25 @@ tools/package_pep_disptcs.py munch-pep-lmh-test.zip out/qcpep/qcpep8250-nohmss.s
     --tags out/qcpep/unsuccessful-tags.json --no-lmh-mmio --patch-log out/qcpep/nohmss.json \
     -o out/qcpep/munch-pep-nohmss-test.zip
 ```
+
+Result: no hang any more; the system stops with SOC_SUBSYSTEM_FAILURE
+(0x14B), but no dump is written. Every 0x14B in qcpep comes from one helper,
+RVA 0x101E80, which copies the message passed in x0 into the bugcheck
+details; it has 350 callers.
+
+## Site code
+
+Since no dump reaches the disk, the test driver puts the caller into the
+stop code. Five instructions before KeBugCheckEx in 0x101E80 become
+
+```
+0x101F1C  ldr x10, [x29, #8]   ; return address saved by the prologue
+0x101F20  adr x9, .            ; runtime address of RVA 0x101F20
+0x101F24  sub w0, w10, w9      ; stop code = return RVA - 0x101F20
+0x101F28  add x1, sp, #0x10    ; unchanged
+0x101F2C  mov x2, x10          ; full return address as parameter 2
+```
+
+so the stop code no longer depends on the load address.
+`tools/pep_fatal_site.py qcpep8250.sys <code>` maps it back to the call
+site and its message (`--all` lists all 350).
