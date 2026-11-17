@@ -320,3 +320,9 @@ of the driver's table and calls each domain's hardware ops (+0x30, +0x40)
 to read back its current configuration, i.e. it reads the RCG registers of
 every clock controller. Next point: 0xF5CC8, after 0xF6A40
 (`out/qcpep/munch-pep-brkf5cc8-test.zip`).
+
+`--ret0-at RVA` (repeatable) turns a function into `mov w0, #0; ret`.
+Prepared for the case that 0xF6A40 is the hang: without it the clock driver
+keeps its table defaults instead of reading every domain's current
+configuration back from the hardware
+(`out/qcpep/munch-pep-nodetect-test.zip`, no breakpoint).

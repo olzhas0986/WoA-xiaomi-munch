@@ -36,6 +36,10 @@ when execution gets there, which writes a normal dump. Used to bisect a hang
 that leaves no dump: 0x1E means the code got past the hang, 0x101 that it
 hung before reaching RVA.
 
+--ret0-at RVA (repeatable) replaces the first two instructions of the
+function at RVA with `mov w0, #0; ret`, so it returns success at once. The
+function must start with a `stp ..., [sp, #-N]!` prologue.
+
 --tag-unsuccessful FILE gives every `orr wN, wzr, #0xC0000001` (STATUS_UNSUCCESSFUL)
 between RVA 0x100000 and 0x130000 its own status value, still an error with
 bit 31 set, and writes the value -> RVA map to FILE. A crash dump then shows
@@ -65,6 +69,7 @@ LMH_TARGET = 0x5C50
 NOP = bytes.fromhex("1f2003d5")
 RET = bytes.fromhex("c0035fd6")
 BRK = bytes.fromhex("00003ed4")      # brk #0xf000
+RET0 = bytes.fromhex("00008052c0035fd6")  # mov w0, #0; ret
 # function entry RVA -> expected first instruction
 LMH_FUNCS = {0x5520: "fd7bbda9", 0x5B20: "fd7bbea9", 0x5B88: "fd7bbda9", 0x5C50: "fd7bbda9"}
 
@@ -135,6 +140,8 @@ def main():
                     help="give each STATUS_UNSUCCESSFUL site a unique status; write the map")
     ap.add_argument("--brk-at", metavar="RVA", type=lambda v: int(v, 16),
                     help="replace the instruction at RVA (hex) with brk #0xf000")
+    ap.add_argument("--ret0-at", metavar="RVA", type=lambda v: int(v, 16), action="append",
+                    default=[], help="make the function at RVA (hex) return 0 at once")
     ap.add_argument("--no-lmh-mmio", action="store_true",
                     help="make the four LMh register functions return immediately")
     ap.add_argument("--with-lmh", action="store_true",
@@ -179,6 +186,14 @@ def main():
                 sys.exit(f"RVA {rva:#x} starts with {got}, expected {want}")
             data[off:off + 4] = RET
             print(f"LMh: RVA {rva:#x} -> RET (file offset {off:#x})")
+
+    for rva in args.ret0_at:
+        off = rva_to_offset(secs, rva)
+        insn = struct.unpack_from("<I", data, off)[0]
+        if insn & 0xFFC003E0 != 0xA98003E0:   # stp xA, xB, [sp, #-N]!
+            sys.exit(f"RVA {rva:#x} does not start with a pre-indexed stp ({insn:#010x})")
+        data[off:off + 8] = RET0
+        print(f"RET0 at RVA {rva:#x} (file offset {off:#x})")
 
     if args.brk_at is not None:
         off = rva_to_offset(secs, args.brk_at)
